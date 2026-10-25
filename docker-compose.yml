@@ -1,5 +1,5 @@
 # Production stack: PostgreSQL + API. Works with docker compose and podman-compose.
-#   cp .env.docker.example .env.docker   # then set real secrets
+#   cp .env.example .env   # then set real secrets
 #   podman compose up -d --build
 services:
   db:
@@ -9,7 +9,7 @@ services:
       POSTGRES_USER: pondus
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: pondus
-    env_file: .env.docker
+    env_file: .env
     volumes:
       - pondus_pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -27,7 +27,7 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    env_file: .env.docker
+    env_file: .env
     environment:
       NODE_ENV: production
       HOST: 0.0.0.0
