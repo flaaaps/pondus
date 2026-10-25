@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="Pondus">
+  <!--
+    Pondus mark: a plate stack seen from the side, rising left to right.
+    Three bars = three loads, each heavier/longer than the last: progress you can feel.
+    Monochrome by design so it works on light, dark and tinted surfaces.
+  -->
+  <rect width="256" height="256" rx="56" fill="#111317"/>
+  <g fill="#F4F2EE">
+    <rect x="40"  y="160" width="56"  height="40" rx="12"/>
+    <rect x="40"  y="104" width="112" height="40" rx="12"/>
+    <rect x="40"  y="48"  width="176" height="40" rx="12" fill="#FF7A1A"/>
+  </g>
+</svg>

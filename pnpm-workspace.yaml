@@ -9,9 +9,10 @@ onlyBuiltDependencies:
   - "@embedded-postgres/darwin-x64"
   - "@node-rs/argon2"
   - esbuild
-# Ships prebuilt binaries as optional dependencies; its build script is not needed.
+# Ship prebuilt binaries as optional dependencies; their build scripts are not needed.
 ignoredBuiltDependencies:
   - "@parcel/watcher"
+  - sharp
 # pnpm ≥ 12 key for both lists above (true = build, false = skip)
 allowBuilds:
   embedded-postgres: true
@@ -22,3 +23,4 @@ allowBuilds:
   "@node-rs/argon2": true
   esbuild: true
   "@parcel/watcher": false
+  sharp: false

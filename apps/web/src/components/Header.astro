@@ -1,0 +1,89 @@
+---
+import { url } from "../lib/url"
+import Mark from "./Mark.astro"
+
+const links = [
+  { href: url("#funktionen"), label: "Funktionen" },
+  { href: url("#so-gehts"), label: "So geht’s" },
+  { href: url("#prinzipien"), label: "Prinzipien" },
+  { href: url("#faq"), label: "FAQ" },
+]
+---
+
+<header class="header">
+  <div class="container bar">
+    <a class="brand" href={url()} aria-label="Pondus, zur Startseite">
+      <Mark size={26} />
+      <span>Pondus</span>
+    </a>
+    <nav aria-label="Seitenbereiche">
+      <ul>
+        {links.map(l => <li><a href={l.href}>{l.label}</a></li>)}
+      </ul>
+    </nav>
+    <span class="soon">Bald im App Store</span>
+  </div>
+</header>
+
+<style>
+  .header {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: color-mix(in srgb, var(--bg) 82%, transparent);
+    backdrop-filter: saturate(1.6) blur(16px);
+    -webkit-backdrop-filter: saturate(1.6) blur(16px);
+    border-bottom: 1px solid var(--border);
+  }
+  .bar {
+    display: flex;
+    align-items: center;
+    gap: 32px;
+    height: 64px;
+  }
+  .brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 1.25rem;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    text-decoration: none;
+  }
+  nav {
+    margin-left: auto;
+  }
+  ul {
+    display: flex;
+    gap: 28px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  nav a {
+    font-size: 0.95rem;
+    font-weight: 500;
+    color: var(--text-2);
+    text-decoration: none;
+  }
+  nav a:hover {
+    color: var(--text);
+  }
+  .soon {
+    padding: 8px 14px;
+    border-radius: 999px;
+    background: var(--text);
+    color: var(--bg);
+    font-size: 0.85rem;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  @media (max-width: 820px) {
+    nav {
+      display: none;
+    }
+    .soon {
+      margin-left: auto;
+    }
+  }
+</style>

@@ -14,3 +14,6 @@ android/
 apps/api/.pgdata/
 apps/api/openapi.json
 *.tsbuildinfo
+
+# Astro
+.astro/

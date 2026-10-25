@@ -1,0 +1,706 @@
+---
+import Base from "../layouts/Base.astro"
+import Header from "../components/Header.astro"
+import Footer from "../components/Footer.astro"
+import Phone from "../components/Phone.astro"
+import StoreBadge from "../components/StoreBadge.astro"
+import Mark from "../components/Mark.astro"
+
+import workout from "../assets/screens/workout.png"
+import workoutRest from "../assets/screens/workout-rest.png"
+import planWeek from "../assets/screens/plan-week.png"
+import planWhy from "../assets/screens/plan-why.png"
+import lockScreen from "../assets/screens/lock-screen.png"
+import exercise from "../assets/screens/exercise.png"
+import progress from "../assets/screens/progress.png"
+import records from "../assets/screens/records.png"
+import today from "../assets/screens/today.png"
+
+const proof = [
+  { title: "Plan in einer Minute", text: "Acht kurze Fragen, ein Plan, der zu Ziel, Zeit und Studio passt." },
+  { title: "Verlässlich offline", text: "Jeder Satz liegt sofort auf dem iPhone und wird später synchronisiert." },
+  { title: "Nachvollziehbar", text: "Jede Empfehlung folgt einer festen Regel. Keine Blackbox." },
+]
+
+const compare = [
+  { name: "Logbuch-Apps", fast: true, plans: false, adapts: false },
+  { name: "Programm-Apps", fast: false, plans: true, adapts: false },
+  { name: "Pondus", fast: true, plans: true, adapts: true, highlight: true },
+]
+
+const steps = [
+  { n: "01", title: "Erzähl Pondus von dir", text: "Ziel, Erfahrung, wie oft und wie lange du trainierst, welches Equipment du hast und welche Muskeln Vorrang haben." },
+  { n: "02", title: "Bekomm deinen Plan", text: "Aufteilung, Übungen, Sätze und Wiederholungen, mit Begründung. Alles bleibt anpassbar, ohne dass deine Historie verloren geht." },
+  { n: "03", title: "Trainiere und steigere", text: "Sätze abhaken, Pause machen, weiter. Pondus rechnet aus deinen Sätzen das Ziel fürs nächste Mal." },
+]
+
+const principles = [
+  { title: "Keine KI-Blackbox", text: "Planung und Progression folgen festen, dokumentierten Regeln. Du kannst jede Empfehlung nachvollziehen." },
+  { title: "Kein Konfetti", text: "Keine Streak-Drohungen, keine Feeds, keine Sprüche. Zahlen, die stimmen, und Ziele, die passen." },
+  { title: "Lokal zuerst", text: "Dein Training wird sofort auf dem iPhone gespeichert. Auch im Keller-Gym ohne Netz geht kein Satz verloren." },
+  { title: "Deine Daten", text: "Keine Werbe-IDs, kein Tracking durch Dritte. Export als JSON und Konto löschen jederzeit in der App." },
+]
+
+const faq = [
+  {
+    q: "Für wen ist Pondus?",
+    a: "Für alle, die zwei- bis sechsmal pro Woche Krafttraining machen und strukturiert vorankommen wollen, vom ambitionierten Einsteiger bis zum erfahrenen Hobby-Athleten. Auch fürs Training zu Hause mit wenig Equipment.",
+  },
+  {
+    q: "Brauche ich Vorwissen?",
+    a: "Nein. Pondus erklärt Begriffe wie RIR (Wiederholungen in Reserve) dort, wo sie vorkommen, und begründet jeden Plan. Wer mehr will, passt alles selbst an.",
+  },
+  {
+    q: "Funktioniert Pondus ohne Internet?",
+    a: "Ja. Workouts werden direkt auf dem iPhone gespeichert und synchronisiert, sobald wieder eine Verbindung besteht.",
+  },
+  {
+    q: "Kann ich eigene Übungen anlegen?",
+    a: "Ja. Neben über 170 Übungen in der Bibliothek, mit Ausführungshinweisen und Alternativen, kannst du eigene Übungen anlegen.",
+  },
+  {
+    q: "Gibt es Pondus für Android oder die Apple Watch?",
+    a: "Zum Start nicht. Pondus erscheint zuerst für das iPhone und auf Deutsch.",
+  },
+  {
+    q: "Was passiert mit meinen Daten?",
+    a: "Pondus speichert, was dein Training braucht: Profil, Pläne, Workouts und daraus berechnete Bestleistungen. Keine Standortdaten, keine Werbe-IDs, kein Tracking durch Dritte. Du kannst alles als JSON exportieren und dein Konto jederzeit löschen.",
+  },
+]
+---
+
+<Base
+  title="Pondus – Krafttraining, das sich deinem Alltag anpasst"
+  description="Pondus plant dein Krafttraining, protokolliert jeden Satz in Sekunden und sagt dir nachvollziehbar, wann du steigerst. Bald im App Store für iPhone."
+>
+  <Header />
+  <main>
+    <section class="hero">
+      <div class="container hero-grid">
+        <div class="hero-copy">
+          <span class="eyebrow">Krafttraining-App für iPhone</span>
+          <h1>Dein Training. Dein Gewicht. Dein Fortschritt.</h1>
+          <p class="lead">
+            Pondus plant dein Krafttraining nach deinem Ziel und deinem Alltag, protokolliert jeden Satz in Sekunden und
+            sagt dir, wann du steigern kannst – mit einer Regel, die du nachvollziehen kannst.
+          </p>
+          <div class="hero-cta">
+            <StoreBadge />
+            <span class="hero-note">Zuerst auf Deutsch.</span>
+          </div>
+        </div>
+        <div class="hero-media" aria-label="Screenshots der App">
+          <Phone class="hero-back" src={planWeek} alt="Wochenansicht des Trainingsplans mit vier Einheiten" width={250} eager />
+          <Phone class="hero-front" src={workout} alt="Workout-Ansicht: ein Satz mit Gewicht, Wiederholungen und Ziel" width={290} eager />
+        </div>
+      </div>
+      <div class="container">
+        <ul class="proof">
+          {
+            proof.map(p => (
+              <li>
+                <Mark size={18} />
+                <div>
+                  <h3>{p.title}</h3>
+                  <p>{p.text}</p>
+                </div>
+              </li>
+            ))
+          }
+        </ul>
+      </div>
+    </section>
+
+    <section class="section compare-section">
+      <div class="container">
+        <div class="section-head">
+          <span class="eyebrow">Warum Pondus</span>
+          <h2>Zwischen Logbuch und starrem Programm.</h2>
+          <p class="lead">
+            Logbuch-Apps sind schnell, aber sie planen nicht. Programm-Apps planen, aber jede verschobene Einheit bringt sie
+            durcheinander. Pondus verbindet beides.
+          </p>
+        </div>
+        <div class="compare" role="table" aria-label="Vergleich">
+          <div class="compare-row compare-headrow" role="row">
+            <span role="columnheader"><span class="sr-only">App-Art</span></span>
+            <span role="columnheader">Schnell im Training</span>
+            <span role="columnheader">Plant für dich</span>
+            <span role="columnheader">Passt sich deinem Alltag an</span>
+          </div>
+          {
+            compare.map(c => (
+              <div class:list={["compare-row", { highlight: c.highlight }]} role="row">
+                <span role="rowheader" class="compare-name">
+                  {c.highlight ? <Mark size={18} /> : null}
+                  {c.name}
+                </span>
+                {[c.fast, c.plans, c.adapts].map(v => (
+                  <span role="cell" class:list={["tick", { yes: v }]}>
+                    {v ? "✓" : "–"}
+                    <span class="sr-only">{v ? "ja" : "nein"}</span>
+                  </span>
+                ))}
+              </div>
+            ))
+          }
+        </div>
+      </div>
+    </section>
+
+    <section id="funktionen" class="section features">
+      <div class="container">
+        <div class="section-head">
+          <span class="eyebrow">Funktionen</span>
+          <h2>Alles, was dein Training braucht. Nichts, was stört.</h2>
+        </div>
+
+        <article class="feature">
+          <div class="feature-copy">
+            <span class="eyebrow">Plan</span>
+            <h3 class="feature-title">Ein Plan, der mitgeht.</h3>
+            <p>
+              Aus Ziel, Erfahrung, Häufigkeit, Dauer, Equipment und Fokusmuskeln entsteht ein Plan mit passender Aufteilung,
+              Übungen, Sätzen und Wiederholungen. Verschiebst du eine Einheit, tauschst eine Übung oder trainierst eine Woche
+              nur dreimal, passt sich der Plan an. Deine Historie bleibt.
+            </p>
+            <ul class="checks">
+              <li>Wochenansicht mit echten Daten statt starrer Tage</li>
+              <li>Übungen tauschen mit passenden Alternativen</li>
+              <li>„Warum so?“ erklärt jede Entscheidung</li>
+            </ul>
+          </div>
+          <div class="feature-media pair">
+            <Phone src={planWeek} alt="Trainingsplan: Woche mit Ober- und Unterkörper-Einheiten" width={260} />
+            <Phone src={planWhy} alt="Begründung des Plans: Aufteilung, Satzzahlen und Fokusmuskeln" width={260} />
+          </div>
+        </article>
+
+        <article class="feature reverse">
+          <div class="feature-copy">
+            <span class="eyebrow">Workout</span>
+            <h3 class="feature-title">Gebaut für die Hantelbank.</h3>
+            <p>
+              Im Workout siehst du genau einen Satz. Gewicht und Wiederholungen sind schon eingetragen, ein großer Haken
+              speichert ihn. Danach läuft die Pause, und Pondus springt zum nächsten Satz – nach der letzten Serie zur nächsten
+              Übung.
+            </p>
+            <ul class="checks">
+              <li>Letzte Werte und Ziel vorbelegt</li>
+              <li>Pausentimer mit Erinnerung, auch bei gesperrtem iPhone</li>
+              <li>Funktioniert ohne Netz</li>
+            </ul>
+          </div>
+          <div class="feature-media pair">
+            <Phone src={workout} alt="Ein Satz im Workout mit großen Steppern für Gewicht und Wiederholungen" width={260} />
+            <Phone src={workoutRest} alt="Pausentimer im Workout und kurze Abfrage der Wiederholungen in Reserve" width={260} />
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="section night" aria-labelledby="sperrbildschirm">
+      <div class="container feature night-feature">
+        <div class="feature-copy">
+          <span class="eyebrow">Live Activity</span>
+          <h3 id="sperrbildschirm" class="feature-title">Auf dem Sperrbildschirm.</h3>
+          <p>
+            Pause, nächster Satz und Ziel stehen auf dem Sperrbildschirm und in der Dynamic Island. Satz abhaken, Pause
+            überspringen, Wiederholungen in Reserve angeben – ohne das iPhone zu entsperren.
+          </p>
+          <ul class="checks">
+            <li>Countdown läuft ohne App im Vordergrund</li>
+            <li>Immer nur eine Aktion: Satz abhaken oder Pause überspringen</li>
+          </ul>
+        </div>
+        <div class="feature-media">
+          <Phone src={lockScreen} alt="Sperrbildschirm mit Pondus Live Activity: Übung, Pause und Button" width={300} />
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container">
+        <article class="feature">
+          <div class="feature-copy">
+            <span class="eyebrow">Progression</span>
+            <h3 class="feature-title">Fortschritt mit Regel, nicht mit Gefühl.</h3>
+            <p>
+              Pondus arbeitet mit Doppelprogression. Du baust die Wiederholungen bis zum oberen Ende des Bereichs auf. Schaffst
+              du das in allen Sätzen mit genug Reserve, schlägt Pondus die kleinste sinnvolle Steigerung vor. Bleibst du zweimal
+              unter dem Minimum, geht es einen Schritt zurück.
+            </p>
+            <ul class="checks">
+              <li>Ziel vor jedem Satz, zum Beispiel „↑ +2,5 kg“</li>
+              <li>Aufwärmsätze werden aus dem Arbeitsgewicht berechnet</li>
+              <li>Empfehlung und Verlauf für jede Übung</li>
+            </ul>
+          </div>
+          <div class="feature-media">
+            <Phone src={exercise} alt="Übungsdetail mit Verlauf des Top-Satzes und Empfehlung fürs nächste Training" width={290} />
+          </div>
+        </article>
+
+        <article class="feature reverse">
+          <div class="feature-copy">
+            <span class="eyebrow">Fortschritt</span>
+            <h3 class="feature-title">Sehen, was sich bewegt.</h3>
+            <p>
+              Wochenvolumen, Sätze pro Muskelgruppe im Vergleich zum Plan, Bestleistungen und die Entwicklung jeder Übung.
+              Geschätzte Werte wie das 1RM sind als Schätzung markiert.
+            </p>
+            <ul class="checks">
+              <li>Volumen, Sätze und Dauer pro Woche</li>
+              <li>Fünf Arten von Bestleistungen</li>
+              <li>Historie jedes Workouts, auch als Vorlage</li>
+            </ul>
+          </div>
+          <div class="feature-media pair">
+            <Phone src={progress} alt="Fortschritt: Wochenvolumen und Sätze pro Muskelgruppe" width={260} />
+            <Phone src={records} alt="Liste der Bestleistungen mit Gewicht und Wiederholungen" width={260} />
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section id="so-gehts" class="section steps-section">
+      <div class="container steps-grid">
+        <div>
+          <div class="section-head">
+            <span class="eyebrow">So geht’s</span>
+            <h2>In drei Schritten zum ersten Training.</h2>
+          </div>
+          <ol class="steps">
+            {
+              steps.map(s => (
+                <li>
+                  <span class="step-n num">{s.n}</span>
+                  <div>
+                    <h3>{s.title}</h3>
+                    <p>{s.text}</p>
+                  </div>
+                </li>
+              ))
+            }
+          </ol>
+        </div>
+        <div class="steps-media">
+          <Phone src={today} alt="Startseite: nächstes Training und Wochenüberblick" width={290} />
+        </div>
+      </div>
+    </section>
+
+    <section id="prinzipien" class="section">
+      <div class="container">
+        <div class="section-head">
+          <span class="eyebrow">Prinzipien</span>
+          <h2>Ein Werkzeug, dem du vertrauen kannst.</h2>
+        </div>
+        <ul class="principles">
+          {
+            principles.map(p => (
+              <li>
+                <h3>{p.title}</h3>
+                <p>{p.text}</p>
+              </li>
+            ))
+          }
+        </ul>
+      </div>
+    </section>
+
+    <section id="faq" class="section faq-section">
+      <div class="container faq-grid">
+        <div class="section-head">
+          <span class="eyebrow">FAQ</span>
+          <h2>Häufige Fragen.</h2>
+        </div>
+        <div class="faq">
+          {
+            faq.map(f => (
+              <details>
+                <summary>{f.q}</summary>
+                <p>{f.a}</p>
+              </details>
+            ))
+          }
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container">
+        <div class="closing">
+          <Mark size={44} class="closing-mark" />
+          <h2>Gewicht, das zählt.</h2>
+          <p>Pondus gibt deinem Training Struktur, ohne es zu diktieren.</p>
+          <StoreBadge tone="light" />
+        </div>
+      </div>
+    </section>
+  </main>
+  <Footer />
+</Base>
+
+<style>
+  /* Hero */
+  .hero {
+    padding-block: clamp(48px, 8vw, 96px) clamp(64px, 8vw, 96px);
+    overflow: hidden;
+  }
+  .hero-grid {
+    display: grid;
+    grid-template-columns: 1.05fr 0.95fr;
+    align-items: center;
+    gap: 48px;
+  }
+  .hero-copy {
+    display: grid;
+    gap: 24px;
+  }
+  .hero-cta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 16px;
+    margin-top: 8px;
+  }
+  .hero-note {
+    font-size: 0.92rem;
+    color: var(--text-3);
+  }
+  .hero-media {
+    position: relative;
+    display: flex;
+    justify-content: center;
+    min-height: 600px;
+  }
+  .hero-media :global(.hero-back) {
+    position: absolute;
+    left: 2%;
+    top: 56px;
+    opacity: 0.96;
+  }
+  .hero-media :global(.hero-front) {
+    position: relative;
+    margin-left: 34%;
+  }
+  .proof {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin: clamp(48px, 7vw, 80px) 0 0;
+    padding: 0;
+    list-style: none;
+  }
+  .proof li {
+    display: flex;
+    gap: 14px;
+    padding: 20px 22px;
+    border-radius: var(--radius-lg);
+    background: var(--surface);
+    border: 1px solid var(--border);
+  }
+  .proof :global(svg) {
+    flex: none;
+    margin-top: 4px;
+  }
+  .proof h3 {
+    font-size: 1.02rem;
+  }
+  .proof p {
+    margin-top: 4px;
+    font-size: 0.95rem;
+    color: var(--text-2);
+  }
+
+  /* Comparison */
+  .compare {
+    display: grid;
+    border-radius: var(--radius-xl);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    overflow: hidden;
+  }
+  .compare-row {
+    display: grid;
+    grid-template-columns: 1.3fr repeat(3, 1fr);
+    align-items: center;
+    padding: 18px 28px;
+    border-top: 1px solid var(--border);
+  }
+  .compare-headrow {
+    border-top: 0;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-2);
+  }
+  .compare-headrow span:not(:first-child),
+  .tick {
+    text-align: center;
+  }
+  .compare-name {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 700;
+  }
+  .tick {
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: var(--text-3);
+  }
+  .tick.yes {
+    color: var(--text);
+  }
+  .highlight {
+    background: var(--accent-soft);
+  }
+  .highlight .tick.yes {
+    color: var(--accent-text);
+  }
+
+  /* Features */
+  .features {
+    padding-top: 0;
+  }
+  .feature {
+    display: grid;
+    grid-template-columns: 0.9fr 1.1fr;
+    align-items: center;
+    gap: clamp(32px, 6vw, 80px);
+  }
+  .feature + .feature {
+    margin-top: clamp(80px, 12vw, 140px);
+  }
+  .feature.reverse .feature-copy {
+    order: 2;
+  }
+  .feature-copy {
+    display: grid;
+    gap: 18px;
+    max-width: 480px;
+  }
+  .feature-title {
+    font-size: clamp(1.7rem, 3vw, 2.3rem);
+    font-weight: 800;
+    letter-spacing: -0.03em;
+  }
+  .feature-copy > p {
+    color: var(--text-2);
+  }
+  .checks {
+    display: grid;
+    gap: 10px;
+    margin: 4px 0 0;
+    padding: 0;
+    list-style: none;
+  }
+  .checks li {
+    position: relative;
+    padding-left: 28px;
+    font-weight: 500;
+  }
+  .checks li::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0.45em;
+    width: 16px;
+    height: 10px;
+    border-radius: 3px;
+    background: var(--accent);
+  }
+  .feature-media {
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+  }
+  .feature-media.pair {
+    gap: 24px;
+  }
+  .feature-media.pair :global(.phone:last-child) {
+    margin-top: 72px;
+  }
+
+  /* Night section (lock screen) */
+  .night {
+    background: var(--night);
+    color: var(--night-text);
+  }
+  .night :global(.phone) {
+    box-shadow:
+      inset 0 0 0 1px rgb(255 255 255 / 0.1),
+      0 0 0 1px rgb(255 255 255 / 0.16),
+      0 30px 80px -20px rgb(255 122 26 / 0.25);
+  }
+  .night .feature-copy > p {
+    color: var(--night-text-2);
+  }
+  .night .eyebrow {
+    color: var(--accent);
+  }
+
+  /* Steps */
+  .steps-section {
+    background: var(--surface);
+    border-block: 1px solid var(--border);
+  }
+  .steps-grid {
+    display: grid;
+    grid-template-columns: 1.2fr 0.8fr;
+    gap: 64px;
+    align-items: center;
+  }
+  .steps {
+    display: grid;
+    gap: 28px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .steps li {
+    display: grid;
+    grid-template-columns: 64px 1fr;
+    gap: 16px;
+  }
+  .step-n {
+    font-size: 2rem;
+    font-weight: 800;
+    line-height: 1;
+    color: var(--accent-text);
+  }
+  .steps p {
+    margin-top: 6px;
+    color: var(--text-2);
+  }
+  .steps-media {
+    display: flex;
+    justify-content: center;
+  }
+
+  /* Principles */
+  .principles {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .principles li {
+    display: grid;
+    gap: 8px;
+    padding: 28px;
+    border-radius: var(--radius-xl);
+    background: var(--surface);
+    border: 1px solid var(--border);
+  }
+  .principles p {
+    color: var(--text-2);
+  }
+
+  /* FAQ */
+  .faq-section {
+    padding-top: 0;
+  }
+  .faq-grid {
+    display: grid;
+    grid-template-columns: 0.8fr 1.2fr;
+    gap: 48px;
+    align-items: start;
+  }
+  .faq {
+    border-top: 1px solid var(--border);
+  }
+  details {
+    border-bottom: 1px solid var(--border);
+  }
+  summary {
+    position: relative;
+    padding: 22px 40px 22px 0;
+    font-size: 1.08rem;
+    font-weight: 650;
+    cursor: pointer;
+    list-style: none;
+  }
+  summary::-webkit-details-marker {
+    display: none;
+  }
+  summary::after {
+    content: "+";
+    position: absolute;
+    right: 4px;
+    top: 50%;
+    translate: 0 -50%;
+    font-size: 1.5rem;
+    font-weight: 400;
+    color: var(--text-3);
+  }
+  details[open] summary::after {
+    content: "–";
+  }
+  details p {
+    padding: 0 40px 24px 0;
+    color: var(--text-2);
+  }
+
+  /* Closing */
+  .closing {
+    display: grid;
+    justify-items: center;
+    gap: 18px;
+    padding: clamp(56px, 8vw, 96px) 24px;
+    border-radius: var(--radius-xl);
+    background: var(--night);
+    color: var(--night-text);
+    text-align: center;
+  }
+  .closing p {
+    max-width: 440px;
+    color: var(--night-text-2);
+    margin-bottom: 12px;
+  }
+  .closing :global(.closing-mark) {
+    color: var(--night-text);
+  }
+
+  /* Small screens */
+  @media (max-width: 960px) {
+    .hero-grid,
+    .feature,
+    .steps-grid,
+    .faq-grid {
+      grid-template-columns: 1fr;
+    }
+    .feature.reverse .feature-copy {
+      order: 0;
+    }
+    .hero-media {
+      min-height: 0;
+    }
+    .proof,
+    .principles {
+      grid-template-columns: 1fr;
+    }
+  }
+  @media (max-width: 640px) {
+    .hero-media :global(.hero-back) {
+      display: none;
+    }
+    .hero-media :global(.hero-front) {
+      margin-left: 0;
+    }
+    .feature-media.pair :global(.phone:last-child) {
+      display: none;
+    }
+    .compare-row {
+      grid-template-columns: 1.2fr repeat(3, 0.8fr);
+      padding: 14px 16px;
+      font-size: 0.9rem;
+    }
+    .compare-headrow {
+      font-size: 0.72rem;
+    }
+  }
+</style>

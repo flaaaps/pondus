@@ -1,0 +1,63 @@
+---
+import { url } from "../lib/url"
+import Mark from "./Mark.astro"
+---
+
+<footer class="footer">
+  <div class="container row">
+    <a class="brand" href={url()} aria-label="Pondus, zur Startseite">
+      <Mark size={20} />
+      <span>Pondus</span>
+    </a>
+    <p class="claim">Dein Training. Dein Gewicht. Dein Fortschritt.</p>
+    <ul>
+      <li><a href={url("impressum")}>Impressum</a></li>
+      <li><a href={url("datenschutz")}>Datenschutz</a></li>
+    </ul>
+  </div>
+  <div class="container fine">
+    <p>© {new Date().getFullYear()} Pondus · iPhone ist eine Marke der Apple Inc.</p>
+  </div>
+</footer>
+
+<style>
+  .footer {
+    border-top: 1px solid var(--border);
+    padding-block: 40px 32px;
+    font-size: 0.92rem;
+    color: var(--text-2);
+  }
+  .row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 16px 32px;
+  }
+  .brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    color: var(--text);
+    text-decoration: none;
+  }
+  ul {
+    display: flex;
+    gap: 24px;
+    margin: 0 0 0 auto;
+    padding: 0;
+    list-style: none;
+  }
+  a {
+    text-decoration: none;
+  }
+  ul a:hover {
+    color: var(--text);
+  }
+  .fine {
+    margin-top: 20px;
+    font-size: 0.8rem;
+    color: var(--text-3);
+  }
+</style>
