@@ -52,7 +52,7 @@ export default function WorkoutGuideScreen() {
       <Section id="logging" title="Was trage ich ein?">
         <Card style={{ gap: space[3] }}>
           <Row label="W">
-            <Text variant="calloutStrong">Aufwärmsatz.</Text> Leichte Sätze zum Einstimmen. Sie zählen nicht zum Trainingsvolumen und nicht für deine Steigerung. Der Vorschlag darunter (z. B. „≈40 × 8“) steigert sich in Stufen auf etwa 40, 60 und 80 % deines Arbeitsgewichts.
+            <Text variant="calloutStrong">Aufwärmsatz.</Text> Leichte Sätze zum Einstimmen. Sie zählen nicht zum Trainingsvolumen und nicht für deine Steigerung. Pondus trägt Vorschläge ein, die sich in Stufen auf etwa 40, 60 und 80 % deines Arbeitsgewichts steigern.
           </Row>
           <Row label="1">
             <Text variant="calloutStrong">Arbeitssatz.</Text> Die Sätze, die zählen. Daraus berechnet Pondus deine Ziele fürs nächste Mal.
@@ -63,7 +63,7 @@ export default function WorkoutGuideScreen() {
           <Row label="F">
             <Text variant="calloutStrong">Satz bis zum Muskelversagen.</Text> Zählt wie ein Arbeitssatz, immer mit RIR 0 – auch wenn er oben im Bereich liegt, steigert Pondus das Gewicht erst, wenn du es mit Reserve schaffst.
           </Row>
-          <P>Tippe auf die Satznummer, um den Satztyp zu ändern. Gedrückt halten öffnet Optionen wie RIR oder Löschen.</P>
+          <P>Den Satztyp änderst du über die Auswahl rechts über den Steppern („Arbeitssatz ⌄“). In der Satzliste wählst du einen Satz per Tipp aus; gedrückt halten öffnet Optionen wie RIR, „nicht erledigt“ oder Löschen.</P>
         </Card>
         <Card style={{ gap: space[2] }}>
           <Text variant="calloutStrong">Gewicht</Text>
@@ -73,7 +73,7 @@ export default function WorkoutGuideScreen() {
           <Text variant="calloutStrong">RIR (Wiederholungen in Reserve)</Text>
           <P>Wie viele saubere Wiederholungen wären noch gegangen? 0 = nichts mehr drin, 2 = zwei hätten noch geklappt. Nach dem Abhaken kannst du den RIR direkt antippen. Optional – ohne RIR entscheidet Pondus nur anhand der Wiederholungen.</P>
           <Text variant="calloutStrong">Abhaken</Text>
-          <P>Hak jeden Satz ab, sobald er fertig ist; dann startet die Pause. Ist ein Feld leer, übernimmt das Abhaken den Wert des vorherigen Satzes.</P>
+          <P>Der große Button unten hakt genau den Satz ab, der oben steht – mit den angezeigten Werten. Danach startet die Pause, und Pondus springt zum nächsten Satz bzw. zur nächsten Übung. Vertippt? „Rückgängig“ erscheint kurz im Dock, und erledigte Sätze kannst du in der Liste antippen und ändern.</P>
         </Card>
       </Section>
 
@@ -103,7 +103,7 @@ export default function WorkoutGuideScreen() {
           <Row label="↓">
             <Text variant="calloutStrong">Deload.</Text> Zweimal hintereinander unter dem Bereich mit gleichem Gewicht: ein Schritt zurück, um wieder sauber zu arbeiten.
           </Row>
-          <P>Die Ziele stehen direkt in den Sätzen. Was du letztes Mal gemacht hast, steht klein unter der Satznummer. Tippe auf das Abzeichen an der Übung, um die Begründung zu sehen. Übungen aus allen Trainingstagen zählen – machst du Bankdrücken zweimal pro Woche, baut das Ziel immer auf dem letzten Mal auf.</P>
+          <P>Die Ziele sind direkt in den Sätzen eingetragen. Weichen deine Werte ab, bringen dich „Zuletzt“ und „Ziel“ unter den Steppern mit einem Tipp zurück. Tippe auf das Abzeichen an der Übung, um die Begründung zu sehen. Übungen aus allen Trainingstagen zählen – machst du Bankdrücken zweimal pro Woche, baut das Ziel immer auf dem letzten Mal auf.</P>
           <P>Körpergewichtsübungen steigern nur über Wiederholungen; bei assistierten Übungen sinkt stattdessen die Unterstützung.</P>
         </Card>
       </Section>

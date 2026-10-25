@@ -150,6 +150,8 @@ export const typography = {
   caption: { fontSize: 12, lineHeight: 16, fontWeight: "500" as const, letterSpacing: 0.2 },
   /** Tabular numerals for weights/reps/timers. */
   numeral: { fontSize: 24, lineHeight: 28, fontWeight: "700" as const, letterSpacing: -0.4, fontVariant: ["tabular-nums"] as const },
+  /** Rest timer in the workout dock. */
+  numeralMedium: { fontSize: 34, lineHeight: 40, fontWeight: "700" as const, letterSpacing: -0.8, fontVariant: ["tabular-nums"] as const },
   numeralLarge: { fontSize: 56, lineHeight: 60, fontWeight: "800" as const, letterSpacing: -2, fontVariant: ["tabular-nums"] as const },
 } as const
 export type TypographyKey = keyof typeof typography
@@ -179,4 +181,11 @@ export const sizes = {
   iconLg: 28,
   tabBarHeight: 50,
   floatingBarHeight: 72,
+  /** Active workout: ± buttons of the set editor, compact variant for small screens / large text. */
+  stepperLarge: 64,
+  stepperCompact: 52,
+  /** Main action in the workout dock. */
+  primaryAction: 64,
+  setRow: 52,
+  chipLarge: 48,
 } as const

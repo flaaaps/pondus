@@ -15,6 +15,8 @@ interface RestTimerState {
   resume: () => void
   adjust: (deltaSeconds: number) => void
   stop: () => void
+  /** Change what the timer is "for" (e.g. "Weiter: Hip Thrust" after moving on to the next exercise). */
+  setLabel: (label: string | null) => void
   /** Seconds left right now (0 when idle). */
   remaining: () => number
   isRunning: () => boolean
@@ -87,6 +89,9 @@ export const useRestTimerStore = create<RestTimerState>()((set, get) => ({
   stop() {
     void cancel(get().notificationId)
     set({ endsAt: null, remainingWhenPaused: null, notificationId: null, label: null })
+  },
+  setLabel(label) {
+    set({ label })
   },
   remaining() {
     const s = get()

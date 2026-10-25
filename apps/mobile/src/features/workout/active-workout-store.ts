@@ -25,7 +25,11 @@ interface ActiveWorkoutState {
   repeatWorkout: (api: ApiClient, source: WorkoutDto) => Promise<WorkoutDto>
   dispatch: (api: ApiClient, m: SyncMutation, extra?: { exerciseName?: string }) => void
   flush: (api: ApiClient) => Promise<void>
-  addExercise: (api: ApiClient, exercise: ExerciseDto, opts?: { replaces?: WorkoutExerciseDto; targetSets?: number; restSeconds?: number }) => void
+  /** Returns the new workout exercise's clientId (null without an active workout). */
+  addExercise: (api: ApiClient, exercise: ExerciseDto, opts?: { replaces?: WorkoutExerciseDto; targetSets?: number; restSeconds?: number }) => string | null
+  setRestSeconds: (api: ApiClient, exercise: WorkoutExerciseDto, seconds: number) => void
+  /** Removes the warm-up sets not done yet ("skip warm-up"). */
+  skipOpenWarmups: (api: ApiClient, exercise: WorkoutExerciseDto) => void
   upsertSet: (api: ApiClient, exercise: WorkoutExerciseDto, set: Partial<WorkoutSetDto> & { clientId: string; setNumber: number }) => void
   /** Edit a not-yet-completed set locally (persisted, not queued); it syncs when completed. */
   updateLocalSet: (exerciseId: string, setId: string, patch: Partial<WorkoutSetDto>) => void
@@ -239,7 +243,7 @@ export const useActiveWorkoutStore = create<ActiveWorkoutState>()((set, get) => 
 
     addExercise(api, exercise, opts) {
       const w = get().workout
-      if (!w) return
+      if (!w) return null
       const clientId = uuid()
       const targetSets = opts?.targetSets ?? opts?.replaces?.targetSets ?? 3
       get().dispatch(
@@ -263,11 +267,20 @@ export const useActiveWorkoutStore = create<ActiveWorkoutState>()((set, get) => 
       )
       // Local placeholder sets so the user can log immediately (server creates its own placeholders; both are dropped if untouched).
       const current = get().workout
-      if (!current) return
+      if (!current) return clientId
       const ex = current.exercises.find(e => e.clientId === clientId)
-      if (!ex) return
+      if (!ex) return clientId
       const sets = Array.from({ length: targetSets }, (_, i) => newSet(i + 1, null, ex.targetRepsMin))
       persist({ ...current, exercises: current.exercises.map(e => (e.clientId === clientId ? { ...e, sets } : e)) })
+      return clientId
+    },
+
+    setRestSeconds(api, exercise, seconds) {
+      get().dispatch(api, { kind: "update_exercise", workoutClientId: workoutClientId(), exerciseClientId: exercise.clientId ?? exercise.id, body: { restSeconds: seconds } })
+    },
+
+    skipOpenWarmups(api, exercise) {
+      for (const s of exercise.sets.filter(x => x.setType === "warmup" && !x.completed)) get().deleteSet(api, s)
     },
 
     upsertSet(api, exercise, patch) {
