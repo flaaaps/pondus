@@ -1,5 +1,6 @@
 import type { PerformedSet } from "./progression"
-import { COUNTS_AS_WORKING } from "./volume"
+import type { LoadType } from "./types"
+import { COUNTS_AS_WORKING, effectiveLoadGrams } from "./volume"
 
 export const RECORD_TYPES = ["max_weight", "max_reps_at_weight", "max_set_volume", "max_session_volume", "estimated_1rm"] as const
 export type RecordType = (typeof RECORD_TYPES)[number]
@@ -12,11 +13,32 @@ export const RECORD_LABELS: Record<RecordType, string> = {
   estimated_1rm: "Geschätztes 1RM",
 }
 
-/** Epley estimate in grams. Only meaningful for ≤ 12 reps; returns null otherwise. */
+/**
+ * Epley estimate in grams. Only meaningful for ≤ 12 reps; returns null otherwise.
+ * Pass the *effective* load: for assisted exercises use `estimateSetOneRepMaxGrams`
+ * (assistance is not a load).
+ */
 export function estimateOneRepMaxGrams(weightGrams: number, reps: number): number | null {
   if (reps <= 0 || reps > 12 || weightGrams <= 0) return null
   if (reps === 1) return weightGrams
   return Math.round(weightGrams * (1 + reps / 30))
+}
+
+/** e1RM for a logged set, aware of load type (assisted → body weight − assistance, or null). */
+export function estimateSetOneRepMaxGrams(
+  weightGrams: number | null,
+  reps: number | null,
+  loadType?: LoadType,
+  bodyweightGrams?: number | null,
+): number | null {
+  const load = effectiveLoadGrams(weightGrams, loadType, bodyweightGrams)
+  if (load === null) return null
+  return estimateOneRepMaxGrams(load, reps ?? 0)
+}
+
+/** Options for bests/records. `loadType` should always be passed by callers that know it. */
+export interface RecordOptions {
+  loadType?: LoadType
 }
 
 export interface ExerciseBests {
@@ -41,16 +63,27 @@ export function emptyBests(): ExerciseBests {
   return { maxWeightGrams: 0, repsAtWeight: {}, maxSetVolumeGrams: 0, maxSessionVolumeGrams: 0, estimated1rmGrams: 0 }
 }
 
-/** Fold a set of performed sets into bests. */
-export function accumulateBests(bests: ExerciseBests, sets: PerformedSet[]): ExerciseBests {
+/** True when the bests contain at least one earlier session (i.e. this is not the first training). */
+export function hasBestsHistory(bests: ExerciseBests): boolean {
+  return bests.maxWeightGrams > 0 || bests.maxSetVolumeGrams > 0 || bests.estimated1rmGrams > 0 || Object.keys(bests.repsAtWeight).length > 0
+}
+
+/**
+ * Fold a set of performed sets into bests. For `assisted` exercises only reps at a
+ * given assistance are tracked: weight, volume and e1RM of the assistance are meaningless
+ * (less assistance is better), so those fields stay untouched.
+ */
+export function accumulateBests(bests: ExerciseBests, sets: PerformedSet[], opts: RecordOptions = {}): ExerciseBests {
   const next: ExerciseBests = { ...bests, repsAtWeight: { ...bests.repsAtWeight } }
+  const assisted = opts.loadType === "assisted"
   let sessionVolume = 0
   for (const s of sets) {
     if (!s.completed || !COUNTS_AS_WORKING[s.setType]) continue
     const w = s.weightGrams ?? 0
     const r = s.reps ?? 0
-    if (w > next.maxWeightGrams && r > 0) next.maxWeightGrams = w
     if (r > (next.repsAtWeight[w] ?? 0)) next.repsAtWeight[w] = r
+    if (assisted) continue
+    if (w > next.maxWeightGrams && r > 0) next.maxWeightGrams = w
     if (w * r > next.maxSetVolumeGrams) next.maxSetVolumeGrams = w * r
     sessionVolume += w * r
     const e = estimateOneRepMaxGrams(w, r)
@@ -62,17 +95,22 @@ export function accumulateBests(bests: ExerciseBests, sets: PerformedSet[]): Exe
 
 /**
  * Compare one session's sets of an exercise with the bests *before* that
- * session and list the records set. Only working sets with weight > 0 or
- * bodyweight reps are considered; comparisons are per exercise so they stay
+ * session and list the records set. Comparisons are per exercise so they stay
  * comparable.
+ *
+ * - The very first session of an exercise (no earlier bests) sets the baseline
+ *   and produces **no** records.
+ * - `assisted` exercises only get "more reps at the same assistance" records;
+ *   max weight / volume / e1RM are skipped because the logged weight is assistance.
  */
-export function detectRecords(previous: ExerciseBests, sets: PerformedSet[]): RecordEvent[] {
+export function detectRecords(previous: ExerciseBests, sets: PerformedSet[], opts: RecordOptions = {}): RecordEvent[] {
   const events: RecordEvent[] = []
-  const after = accumulateBests(previous, sets)
   const working = sets.filter(s => s.completed && COUNTS_AS_WORKING[s.setType])
-  if (!working.length) return events
+  if (!working.length || !hasBestsHistory(previous)) return events
+  const assisted = opts.loadType === "assisted"
+  const after = accumulateBests(previous, sets, opts)
 
-  if (after.maxWeightGrams > previous.maxWeightGrams && previous.maxWeightGrams >= 0) {
+  if (!assisted && after.maxWeightGrams > previous.maxWeightGrams) {
     const set = working.find(s => (s.weightGrams ?? 0) === after.maxWeightGrams)
     events.push({ type: "max_weight", valueGrams: after.maxWeightGrams, reps: set?.reps ?? null, weightGrams: after.maxWeightGrams, previousValue: previous.maxWeightGrams || null, isEstimate: false })
   }
@@ -84,6 +122,7 @@ export function detectRecords(previous: ExerciseBests, sets: PerformedSet[]): Re
       events.push({ type: "max_reps_at_weight", valueGrams: null, reps: r, weightGrams: w, previousValue: prevReps, isEstimate: false })
     }
   }
+  if (assisted) return events
   if (after.maxSetVolumeGrams > previous.maxSetVolumeGrams && previous.maxSetVolumeGrams > 0) {
     events.push({ type: "max_set_volume", valueGrams: after.maxSetVolumeGrams, reps: null, weightGrams: null, previousValue: previous.maxSetVolumeGrams, isEstimate: false })
   }

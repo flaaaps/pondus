@@ -3,6 +3,7 @@ import { MUSCLE_SLUGS, muscleGroup, type MuscleSlug } from "./muscles"
 import type { ExerciseRef, PlanDraft, PlanSessionDraft, TrainingProfile } from "./types"
 import { estimateSessionMinutes } from "./duration"
 import { weeklySetsByMuscle } from "./volume"
+import { SPLIT_LABELS } from "./splits"
 
 export interface PlanDiff {
   oldFrequency: number
@@ -49,7 +50,8 @@ export function diffPlans(before: PlanDraft, after: PlanDraft, byId: Map<string,
   const summary: string[] = []
   if (before.weeklyFrequency !== after.weeklyFrequency)
     summary.push(`Trainingshäufigkeit: ${before.weeklyFrequency}× → ${after.weeklyFrequency}× pro Woche.`)
-  if (before.splitType !== after.splitType) summary.push(`Aufteilung: ${before.splitType} → ${after.splitType}.`)
+  if (before.splitType !== after.splitType)
+    summary.push(`Aufteilung: ${SPLIT_LABELS[before.splitType] ?? before.splitType} → ${SPLIT_LABELS[after.splitType] ?? after.splitType}.`)
   summary.push(`${kept} Übungen bleiben erhalten, ${exercisesAdded.length} kommen hinzu, ${exercisesRemoved.length} fallen weg.`)
   summary.push(`Wöchentliche Arbeitssätze: ${sum(before.weeklySets)} → ${sum(after.weeklySets)}.`)
   summary.push(`Dauer pro Einheit: ca. ${avgDuration(before)} → ${avgDuration(after)} Minuten.`)

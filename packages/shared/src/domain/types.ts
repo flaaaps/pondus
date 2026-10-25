@@ -48,7 +48,12 @@ export type MovementPattern = (typeof MOVEMENT_PATTERNS)[number]
 export const DIFFICULTIES = ["beginner", "intermediate", "advanced"] as const
 export type Difficulty = (typeof DIFFICULTIES)[number]
 
-export const LOAD_TYPES = ["machine", "cable", "free_weight", "bodyweight"] as const
+/**
+ * How an exercise is loaded. `assisted` means the logged weight is *assistance*
+ * (counterweight / band) that is subtracted from body weight: less is better.
+ * Records, e1RM and tonnage treat it accordingly (see records.ts / volume.ts).
+ */
+export const LOAD_TYPES = ["machine", "cable", "free_weight", "bodyweight", "assisted"] as const
 export type LoadType = (typeof LOAD_TYPES)[number]
 
 /** Domain view of an exercise as the planner needs it (DB rows map onto this). */

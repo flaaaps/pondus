@@ -81,7 +81,7 @@ export const CHEST = [
   ex("chest-dip", "Dips (Brustfokus)", "Chest Dip", {
     cat: "compound", mp: "horizontal_push", eq: ["dip_station"], load: "bodyweight", diff: "intermediate", p: ["chest"], s: ["triceps", "shoulders"],
     desc: "Oberkörper nach vorne lehnen, Ellbogen leicht nach außen, tief absenken bis die Brust dehnt.",
-    cues: ["Nach vorne lehnen für mehr Brust", "Schultern nicht nach vorne fallen lassen"], alt: ["decline-barbell-bench-press", "high-to-low-cable-fly"],
+    cues: ["Nach vorne lehnen für mehr Brust", "Schultern nicht nach vorne fallen lassen"], alt: ["decline-barbell-bench-press", "high-to-low-cable-fly", "assisted-dip"],
   }),
   ex("dumbbell-pullover", "Überzüge mit Kurzhantel", "Dumbbell Pullover", {
     cat: "isolation", mp: "shoulder_flexion", eq: ["dumbbell", "bench"], load: "free_weight", diff: "intermediate", p: ["chest"], s: ["back"],
@@ -105,8 +105,8 @@ export const BACK = [
     desc: "Parallelgriff, schonend für Schultern und Ellbogen.", alt: ["pull-up", "neutral-grip-lat-pulldown"],
   }),
   ex("assisted-pull-up", "Klimmzüge an der Maschine (unterstützt)", "Assisted Pull-Up", {
-    cat: "compound", mp: "vertical_pull", eq: ["machine"], load: "machine", p: ["back"], s: ["biceps"],
-    desc: "Klimmzug mit Gegengewicht an der Maschine – ideal, um sich an freie Klimmzüge heranzuarbeiten.", alt: ["lat-pulldown", "pull-up"],
+    cat: "compound", mp: "vertical_pull", eq: ["machine"], load: "assisted", p: ["back"], s: ["biceps"],
+    desc: "Klimmzug mit Gegengewicht an der Maschine – ideal, um sich an freie Klimmzüge heranzuarbeiten. Eingetragen wird die Unterstützung: weniger Gewicht heißt mehr Eigenleistung.", alt: ["lat-pulldown", "pull-up"],
   }),
   ex("lat-pulldown", "Latzug", "Lat Pulldown", {
     cat: "compound", mp: "vertical_pull", eq: ["cable"], load: "cable", p: ["back"], s: ["biceps", "forearms"],

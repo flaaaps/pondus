@@ -173,7 +173,12 @@ export const TRICEPS = [
   }),
   ex("triceps-dip", "Dips (Trizepsfokus)", "Triceps Dip", {
     cat: "compound", mp: "vertical_push", eq: ["dip_station"], load: "bodyweight", diff: "intermediate", p: ["triceps"], s: ["chest", "shoulders"],
-    desc: "Aufrechter Oberkörper, Ellbogen eng und nach hinten, bis die Oberarme parallel zum Boden sind.", alt: ["close-grip-bench-press", "machine-dip"],
+    desc: "Aufrechter Oberkörper, Ellbogen eng und nach hinten, bis die Oberarme parallel zum Boden sind.", alt: ["close-grip-bench-press", "machine-dip", "assisted-dip"],
+  }),
+  ex("assisted-dip", "Dips an der Maschine (unterstützt)", "Assisted Dip", {
+    cat: "compound", mp: "vertical_push", eq: ["machine"], load: "assisted", p: ["triceps"], s: ["chest", "shoulders"],
+    desc: "Dips mit Gegengewicht an der Klimmzug-/Dip-Maschine. Eingetragen wird die Unterstützung: weniger Gewicht heißt mehr Eigenleistung.",
+    cues: ["Schultern unten und hinten halten", "Bis die Oberarme etwa parallel zum Boden sind"], aliases: ["Assisted Dips"], alt: ["triceps-dip", "chest-dip", "machine-dip"],
   }),
   ex("machine-dip", "Dip-Maschine", "Machine Dip", {
     cat: "compound", mp: "vertical_push", eq: ["machine"], load: "machine", p: ["triceps"], s: ["chest"],

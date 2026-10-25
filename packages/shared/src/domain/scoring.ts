@@ -21,7 +21,24 @@ export interface ScoringContext {
   planExerciseIds: Set<string>
   /** Prefer compounds when true (first slots), isolations otherwise. */
   wantCompound: boolean
+  /** Muscles the current session is responsible for; lower-body work on an upper day is penalised. */
+  sessionMuscles?: Set<MuscleSlug>
+  /** Exercise ids used in earlier sessions of the same kind (Oberkörper A → B): main lifts should vary. */
+  siblingExerciseIds?: Set<string>
+  /** How often each movement pattern already appears in the plan (all sessions so far + this one). */
+  planPatternCounts?: Map<MovementPattern, number>
+  /** Weekly cap per pattern (e.g. one pullover/shrug per week). */
+  patternLimitsPerWeek?: Partial<Record<MovementPattern, number>>
+  /** Plan-wide volume state per muscle: credit so far (plan + session), weekly target and cap. */
+  muscleState?: (m: MuscleSlug) => { credit: number; target: number; cap: number }
+  /** Slugs that are never a default pick (still allowed when preferred / continuity). */
+  discouragedSlugs?: Set<string>
 }
+
+const LOWER_BODY_PATTERNS: MovementPattern[] = ["squat", "hinge", "lunge", "hip_extension", "hip_abduction", "hip_adduction", "knee_extension", "knee_flexion"]
+const LOWER_BODY_MUSCLES: MuscleSlug[] = ["quads", "hamstrings", "glutes"]
+/** Movement families: same family twice in a session is mostly redundant. */
+const PATTERN_FAMILY: Partial<Record<MovementPattern, string>> = { hinge: "hip", hip_extension: "hip" }
 
 export const DIFFICULTY_RANK = { beginner: 0, intermediate: 1, advanced: 2 } as const
 
@@ -66,6 +83,37 @@ export function scoreExercise(ex: ExerciseRef, ctx: ScoringContext): number | nu
 
   // Redundancy: same movement pattern twice in a session is rarely useful.
   if (ctx.sessionPatterns.has(ex.movementPattern)) score -= 4
+  else {
+    const family = PATTERN_FAMILY[ex.movementPattern]
+    if (family && [...ctx.sessionPatterns].some(p => PATTERN_FAMILY[p] === family)) score -= 2
+  }
+  const wanted = ctx.preferred.has(ex.id) || ctx.continuity.has(ex.id)
+  // Plan-wide redundancy: limited patterns (pullovers, shrugs) at most N per week.
+  const limit = ctx.patternLimitsPerWeek?.[ex.movementPattern]
+  if (limit !== undefined && (ctx.planPatternCounts?.get(ex.movementPattern) ?? 0) >= limit && !wanted) score -= 8
+  // Variation between sibling sessions (Oberkörper A/B): different main lifts, softer for isolation.
+  if (ctx.siblingExerciseIds?.has(ex.id)) score -= isCompound ? 3 : 1.5
+  if (ctx.discouragedSlugs?.has(ex.slug) && !wanted) score -= 6
+  // Lower-body patterns on a session without lower-body muscles (rack pulls on upper day).
+  if (ctx.sessionMuscles) {
+    const lowerSession = LOWER_BODY_MUSCLES.some(m => ctx.sessionMuscles!.has(m))
+    if (!lowerSession && LOWER_BODY_PATTERNS.includes(ex.movementPattern)) score -= 5
+    for (const m of ex.primaryMuscles) if (!ctx.sessionMuscles.has(m)) score -= 3
+  }
+  // Volume budget: don't pile onto muscles that already reached their weekly target/cap.
+  if (ctx.muscleState) {
+    for (const m of ex.primaryMuscles) {
+      if (m === ctx.targetMuscle) continue
+      const st = ctx.muscleState(m)
+      if (st.credit >= st.cap) score -= 6
+      else if (st.credit >= st.target) score -= 3
+    }
+    for (const m of ex.secondaryMuscles) {
+      if (m === ctx.targetMuscle || m === "forearms") continue
+      const st = ctx.muscleState(m)
+      if (st.credit >= st.cap) score -= 1
+    }
+  }
   // Variety across sessions, but keep it soft so continuity still wins when wanted.
   // A continuity exercise that is *not yet* in the plan beats repeating one that is.
   if (ctx.planExerciseIds.has(ex.id)) score -= ctx.continuity.has(ex.id) ? 1 : 1.5

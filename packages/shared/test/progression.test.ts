@@ -60,9 +60,10 @@ describe("records", () => {
     expect(types).toContain("max_reps_at_weight")
     expect(events.find(e => e.type === "estimated_1rm")?.isEstimate).toBe(true)
   })
-  it("does not report records for the very first session except max weight", () => {
-    const events = detectRecords(emptyBests(), [w(50000, 10)])
-    expect(events.map(e => e.type)).toEqual(["max_weight"])
+  it("does not report any record for the very first session of an exercise (B-21)", () => {
+    expect(detectRecords(emptyBests(), [w(50000, 10)])).toEqual([])
+    // Bodyweight: first session also only sets the baseline.
+    expect(detectRecords(emptyBests(), [w(0, 10)])).toEqual([])
   })
   it("tonnage ignores warm-ups", () => {
     expect(tonnageGrams([{ setType: "warmup", weightGrams: 40000, reps: 10, completed: true }, { setType: "working", weightGrams: 60000, reps: 10, completed: true }])).toBe(600000)

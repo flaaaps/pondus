@@ -1,9 +1,18 @@
 import { estimateSessionMinutes } from "./duration"
-import { DEFAULT_HEURISTICS, prescriptionCategory, type PlanningHeuristics } from "./heuristics"
+import { DEFAULT_HEURISTICS, isHipIsolation, prescriptionForExercise, type PlanningHeuristics } from "./heuristics"
 import { MUSCLE_SLUGS, muscleGroup, type MuscleSlug } from "./muscles"
 import { assignWeekdays } from "./schedule"
-import { rankExercises, type ScoringContext } from "./scoring"
-import { splitTemplate, suggestSplit, type SplitTemplate } from "./splits"
+import { DIFFICULTY_RANK, rankExercises, type ScoringContext } from "./scoring"
+import {
+  SPLIT_LABELS,
+  assignRequiredSlots,
+  splitTemplate,
+  suggestSplit,
+  type RequiredSlot,
+  type SessionKind,
+  type SessionTemplate,
+  type SplitTemplate,
+} from "./splits"
 import type {
   ExerciseRef,
   PlanDraft,
@@ -28,6 +37,8 @@ export interface GeneratePlanOptions {
 }
 
 const CORE_MUSCLES: MuscleSlug[] = ["abs", "lower_back"]
+/** Muscles usually trained with isolation / core work rather than a main compound. */
+const SMALL_MUSCLES: MuscleSlug[] = ["biceps", "triceps", "calves", "forearms", "abs", "lower_back"]
 
 /** Weekly working-set targets per muscle, after applying focus priorities. */
 export function weeklySetTargets(profile: TrainingProfile, h: PlanningHeuristics = DEFAULT_HEURISTICS): Record<MuscleSlug, number> {
@@ -51,14 +62,34 @@ export function weeklySetTargets(profile: TrainingProfile, h: PlanningHeuristics
   return out
 }
 
+/** Weekly cap per muscle: the planner never exceeds this (plan-wide, primary + secondary credit). */
+export function weeklySetCaps(targets: Record<MuscleSlug, number>, h: PlanningHeuristics = DEFAULT_HEURISTICS): Record<MuscleSlug, number> {
+  const out = emptyMuscleRecord()
+  for (const m of MUSCLE_SLUGS) out[m] = targets[m] > 0 ? Math.max(targets[m] + 1, Math.round(targets[m] * h.weeklyCapFactor)) : 0
+  return out
+}
+
+/** Shared, plan-wide state while sessions are built one after another. */
+interface PlanState {
+  targets: Record<MuscleSlug, number>
+  caps: Record<MuscleSlug, number>
+  /** Credit from sessions already built. */
+  planCredit: Record<MuscleSlug, number>
+  /** Sessions (including the current one) that still train the muscle. */
+  sessionsLeft: Record<MuscleSlug, number>
+  planExerciseIds: Set<string>
+  planPatternCounts: Map<ExerciseRef["movementPattern"], number>
+  idsByKind: Map<SessionKind, Set<string>>
+}
+
 interface BuildSessionInput {
-  template: SplitTemplate["sessions"][number]
+  template: SessionTemplate
   sessionIndex: number
+  required: RequiredSlot[]
   profile: TrainingProfile
   exercises: ExerciseRef[]
   byId: Map<string, ExerciseRef>
-  setsPerSession: Record<MuscleSlug, number>
-  planExerciseIds: Set<string>
+  state: PlanState
   continuity: Set<string>
   familiar: Set<string>
   h: PlanningHeuristics
@@ -75,10 +106,6 @@ function orderMuscles(muscles: MuscleSlug[], profile: TrainingProfile, h: Planni
     if (ca !== cb) return ca - cb
     return (h.muscleWeight[b] ?? 0) - (h.muscleWeight[a] ?? 0) || muscles.indexOf(a) - muscles.indexOf(b)
   })
-}
-
-function prescriptionFor(ex: ExerciseRef, profile: TrainingProfile, h: PlanningHeuristics) {
-  return h.prescriptions[profile.primaryGoal][prescriptionCategory(ex.category)]
 }
 
 function sortSessionExercises(
@@ -104,20 +131,73 @@ function sortSessionExercises(
     .map((x, i) => ({ ...x.d, sequence: i + 1 }))
 }
 
-function buildSession(input: BuildSessionInput): PlanSessionDraft {
-  const { template, profile, exercises, byId, setsPerSession, planExerciseIds, continuity, familiar, h } = input
+/** Movement family used for warm-up decisions: one warm-up block per family and session. */
+function warmupFamily(pattern: ExerciseRef["movementPattern"]): string {
+  switch (pattern) {
+    case "horizontal_push":
+    case "vertical_push":
+      return "push"
+    case "horizontal_pull":
+    case "vertical_pull":
+      return "pull"
+    case "squat":
+    case "lunge":
+      return "knee"
+    case "hinge":
+    case "hip_extension":
+      return "hip"
+    default:
+      return pattern
+  }
+}
+
+/**
+ * Warm-ups only for the first main exercise of each movement family in a session:
+ * the very first compound gets `warmupSetsForFirstCompounds`, the first compound of
+ * every further family `warmupSetsForFollowingPatterns`, everything else 0.
+ * Hip isolation (hip thrusts, pull-throughs) and bodyweight lifts never get warm-ups.
+ */
+export function assignWarmups(
+  ordered: PlanExerciseDraft[],
+  byId: Map<string, ExerciseRef>,
+  h: PlanningHeuristics = DEFAULT_HEURISTICS,
+): PlanExerciseDraft[] {
+  const warmed = new Set<string>()
+  return ordered.map(d => {
+    const ref = byId.get(d.exerciseId)
+    if (!ref || ref.category !== "compound" || isHipIsolation(ref) || ref.loadType === "bodyweight") return { ...d, warmupSets: 0 }
+    const family = warmupFamily(ref.movementPattern)
+    if (warmed.has(family)) return { ...d, warmupSets: 0 }
+    const sets = warmed.size === 0 ? h.warmupSetsForFirstCompounds : h.warmupSetsForFollowingPatterns
+    warmed.add(family)
+    return { ...d, warmupSets: sets }
+  })
+}
+
+function clampSets(n: number, h: PlanningHeuristics): number {
+  return Math.max(h.setsPerExercise.min, Math.min(h.setsPerExercise.max, Math.round(n)))
+}
+
+function buildSession(input: BuildSessionInput): { session: PlanSessionDraft; requiredIds: Set<string> } {
+  const { template, profile, exercises, byId, state, continuity, familiar, h, required } = input
   const available = new Set(profile.availableEquipment)
   const focus = new Set(profile.musclePriorities.map(p => p.muscle))
   const preferred = new Set(profile.preferredExerciseIds)
   const excluded = new Set(profile.excludedExerciseIds)
+  const discouraged = new Set(h.discouragedExerciseSlugs)
+  const sessionMuscles = new Set(template.muscles)
+  const siblings = state.idsByKind.get(template.kind) ?? new Set<string>()
   const maxExercises = h.maxExercisesPerSession[profile.experienceLevel]
 
   const chosen: PlanExerciseDraft[] = []
+  const requiredIds = new Set<string>()
   const sessionPatterns = new Set<ExerciseRef["movementPattern"]>()
   const sessionIds = new Set<string>()
   const credit = emptyMuscleRecord()
+  const patternCounts = new Map(state.planPatternCounts)
 
-  const baseCtx = (muscle: MuscleSlug, wantCompound: boolean): ScoringContext => ({
+  const total = (m: MuscleSlug) => state.planCredit[m] + credit[m]
+  const ctx = (muscle: MuscleSlug, wantCompound: boolean): ScoringContext => ({
     targetMuscle: muscle,
     focusMuscles: focus,
     preferred,
@@ -128,12 +208,18 @@ function buildSession(input: BuildSessionInput): PlanSessionDraft {
     experience: profile.experienceLevel,
     sessionPatterns,
     sessionExerciseIds: sessionIds,
-    planExerciseIds,
+    planExerciseIds: state.planExerciseIds,
     wantCompound,
+    sessionMuscles,
+    siblingExerciseIds: siblings,
+    planPatternCounts: patternCounts,
+    patternLimitsPerWeek: h.patternLimitsPerWeek,
+    muscleState: m => ({ credit: total(m), target: state.targets[m], cap: state.caps[m] }),
+    discouragedSlugs: discouraged,
   })
 
   const add = (ex: ExerciseRef, sets: number) => {
-    const p = prescriptionFor(ex, profile, h)
+    const p = prescriptionForExercise(ex, profile.primaryGoal, profile.experienceLevel, h)
     chosen.push({
       exerciseId: ex.id,
       sequence: chosen.length + 1,
@@ -147,63 +233,92 @@ function buildSession(input: BuildSessionInput): PlanSessionDraft {
     })
     sessionIds.add(ex.id)
     sessionPatterns.add(ex.movementPattern)
+    patternCounts.set(ex.movementPattern, (patternCounts.get(ex.movementPattern) ?? 0) + 1)
     for (const m of ex.primaryMuscles) credit[m] += sets
     for (const m of ex.secondaryMuscles) credit[m] += sets * h.secondarySetCredit
   }
 
-  const muscles = orderMuscles(template.muscles, profile, h)
-  const need = (m: MuscleSlug) => setsPerSession[m] - credit[m]
-
-  // Pass 1: one main exercise per muscle that still needs work.
-  for (const muscle of muscles) {
-    if (chosen.length >= maxExercises) break
-    const remaining = need(muscle)
-    if (remaining < 1) continue
-    const wantCompound = !CORE_MUSCLES.includes(muscle) && muscle !== "biceps" && muscle !== "triceps" && muscle !== "calves" && muscle !== "forearms"
-    const ranked = rankExercises(exercises, baseCtx(muscle, wantCompound))
-    const pick = ranked[0]
-    if (!pick) continue
-    const sets = Math.max(h.setsPerExercise.min, Math.min(h.setsPerExercise.max, Math.round(remaining)))
-    add(pick.exercise, sets)
+  /** Sets that fit under the weekly cap of every primary muscle (null = does not fit at minimum sets). */
+  const fit = (ex: ExerciseRef, desired: number): number | null => {
+    let sets = desired
+    for (const m of ex.primaryMuscles) sets = Math.min(sets, Math.floor(state.caps[m] - total(m) + 1e-9))
+    return sets >= h.setsPerExercise.min ? sets : null
+  }
+  const pickFitting = (ranked: { exercise: ExerciseRef }[], desired: number) => {
+    for (const r of ranked) {
+      const sets = fit(r.exercise, desired)
+      if (sets !== null) return { exercise: r.exercise, sets }
+    }
+    return null
   }
 
+  /** What this session should still contribute: an even share of the remaining weekly budget. */
+  const need = (m: MuscleSlug) => (state.targets[m] - state.planCredit[m]) / Math.max(1, state.sessionsLeft[m]) - credit[m]
+
+  // Pass 0: mandatory movement slots (leg curl, lateral raise, core, calves). Cap is not enforced here.
+  for (const slot of required) {
+    if (chosen.length >= maxExercises) break
+    // Mandatory, but never with an exercise two levels above the user (Nordic curls for beginners).
+    const candidates = exercises.filter(
+      e =>
+        slot.patterns.includes(e.movementPattern) &&
+        slot.categories.includes(e.category) &&
+        DIFFICULTY_RANK[e.difficulty] - DIFFICULTY_RANK[profile.experienceLevel] < 2,
+    )
+    const pick = rankExercises(candidates, ctx(slot.muscle, false))[0]
+    if (!pick) continue
+    // Mandatory accessories get 2–3 sets; the plan-wide balancing pass tops up if the muscle stays short.
+    const desired = Math.min(3, clampSets(need(slot.muscle), h))
+    add(pick.exercise, desired)
+    requiredIds.add(pick.exercise.id)
+  }
+
+  const muscles = orderMuscles(template.muscles, profile, h)
+
+  // Pass 1: one main exercise per muscle that still needs work.
+  const pass1 = (list: MuscleSlug[]) => {
+    for (const muscle of list) {
+      if (chosen.length >= maxExercises) break
+      const remaining = need(muscle)
+      if (remaining < 1) continue
+      const wantCompound = !SMALL_MUSCLES.includes(muscle)
+      const pick = pickFitting(rankExercises(exercises, ctx(muscle, wantCompound)), clampSets(remaining, h))
+      if (pick) add(pick.exercise, pick.sets)
+    }
+  }
   // Pass 2: fill remaining deficits with a second (usually isolation) exercise, largest deficit first.
-  const deficits = () =>
-    muscles
+  const pass2 = (list: MuscleSlug[]) => {
+    const deficits = list
       .map(m => ({ m, d: need(m) }))
       .filter(x => x.d >= 1.5)
       .sort((a, b) => b.d - a.d)
-  for (const { m, d } of deficits()) {
-    if (chosen.length >= maxExercises) break
-    const ranked = rankExercises(exercises, baseCtx(m, false))
-    const pick = ranked[0]
-    if (!pick) continue
-    add(pick.exercise, Math.max(h.setsPerExercise.min, Math.min(h.setsPerExercise.max, Math.round(d))))
-  }
-
-  // Warm-up sets on the first two compounds.
-  let warmed = 0
-  const priorityOf = new Map(profile.musclePriorities.map(p => [p.muscle, p.priority] as const))
-  let ordered = sortSessionExercises(chosen, byId, h, priorityOf)
-  ordered = ordered.map(d => {
-    const ref = byId.get(d.exerciseId)
-    if (ref?.category === "compound" && warmed < 2) {
-      warmed += 1
-      return { ...d, warmupSets: h.warmupSetsForFirstCompounds }
+    for (const { m } of deficits) {
+      if (chosen.length >= maxExercises) break
+      const d = need(m)
+      if (d < 1.5) continue
+      const pick = pickFitting(rankExercises(exercises, ctx(m, false)), clampSets(d, h))
+      if (pick) add(pick.exercise, pick.sets)
     }
-    return d
-  })
+  }
+  // Big muscles first, then focus-muscle deficits (a second exercise for a focus muscle beats
+  // arm isolation), then small muscles, then everything that is still short.
+  pass1(muscles.filter(m => !SMALL_MUSCLES.includes(m)))
+  pass2(muscles.filter(m => focus.has(m)))
+  pass1(muscles.filter(m => SMALL_MUSCLES.includes(m)))
+  pass2(muscles)
 
-  // Fit the time budget: trim sets from the end (isolation first), then drop exercises.
+  const priorityOf = new Map(profile.musclePriorities.map(p => [p.muscle, p.priority] as const))
+  let ordered = assignWarmups(sortSessionExercises(chosen, byId, h, priorityOf), byId, h)
+
+  // Fit the time budget: trim sets from the end (isolation first), then drop exercises. Mandatory slots go last.
   const lookup = (id: string) => byId.get(id)
   const budget = profile.sessionDurationMinutes
   let guard = 0
-  // Trim order: lowest-priority muscle first, isolation before compound, later exercises first.
   const trimRank = (d: PlanExerciseDraft, index: number) => {
     const ref = byId.get(d.exerciseId)
     const primary = ref?.primaryMuscles[0]
     const prio = primary ? (priorityOf.get(primary) ?? 50) : 50
-    return prio * 1000 - (ref?.category === "compound" ? 100 : 0) - index
+    return prio * 1000 - (ref?.category === "compound" ? 100 : 0) - (requiredIds.has(d.exerciseId) ? 50_000 : 0) + d.targetSets * 10 - index
   }
   while (estimateSessionMinutes(ordered, lookup, h) > budget && ordered.length > 1 && guard++ < 100) {
     const candidates = ordered
@@ -211,26 +326,138 @@ function buildSession(input: BuildSessionInput): PlanSessionDraft {
       .filter(x => x.d.targetSets > h.setsPerExercise.min)
       .sort((a, b) => b.r - a.r)
     const pick = candidates[0]
-    if (pick) {
+    const pickPrimary = pick ? byId.get(pick.d.exerciseId)?.primaryMuscles[0] : undefined
+    // Rather drop a non-focus accessory than cut a focus muscle's main work.
+    const accessory =
+      pickPrimary && focus.has(pickPrimary)
+        ? ordered
+            .map((d, i) => ({ d, i, ref: byId.get(d.exerciseId) }))
+            .filter(x => x.ref && x.ref.category !== "compound" && !requiredIds.has(x.d.exerciseId) && !x.ref.primaryMuscles.some(m => focus.has(m)))
+            .sort((a, b) => trimRank(b.d, b.i) - trimRank(a.d, a.i))[0]
+        : undefined
+    if (accessory && ordered.length > 4) {
+      ordered = assignWarmups(
+        ordered.filter((_, i) => i !== accessory.i).map((d, i) => ({ ...d, sequence: i + 1 })),
+        byId,
+        h,
+      )
+    } else if (pick) {
       ordered[pick.i] = { ...pick.d, targetSets: pick.d.targetSets - 1 }
     } else {
       const drop = ordered.map((d, i) => ({ i, r: trimRank(d, i) })).sort((a, b) => b.r - a.r)[0]!
-      ordered = ordered.filter((_, i) => i !== drop.i).map((d, i) => ({ ...d, sequence: i + 1 }))
+      ordered = assignWarmups(
+        ordered.filter((_, i) => i !== drop.i).map((d, i) => ({ ...d, sequence: i + 1 })),
+        byId,
+        h,
+      )
     }
   }
 
-  const focusMuscles = Array.from(
-    new Set(ordered.flatMap(d => byId.get(d.exerciseId)?.primaryMuscles ?? [])),
-  )
-
   return {
-    name: template.name,
-    sequence: input.sessionIndex + 1,
-    weekday: null,
-    focusMuscles,
-    estimatedDurationMinutes: estimateSessionMinutes(ordered, lookup, h),
-    exercises: ordered,
+    session: {
+      name: template.name,
+      sequence: input.sessionIndex + 1,
+      weekday: null,
+      focusMuscles: sessionFocus(ordered, byId),
+      estimatedDurationMinutes: estimateSessionMinutes(ordered, lookup, h),
+      exercises: ordered,
+    },
+    requiredIds,
   }
+}
+
+function sessionFocus(list: PlanExerciseDraft[], byId: Map<string, ExerciseRef>): MuscleSlug[] {
+  return Array.from(new Set(list.flatMap(d => byId.get(d.exerciseId)?.primaryMuscles ?? [])))
+}
+
+/**
+ * Plan-wide correction after all sessions are built: enforce the weekly cap
+ * (remove sets, then whole non-mandatory exercises from over-served muscles) and
+ * top up muscles clearly under target where the time budget allows.
+ */
+function balancePlan(
+  sessions: PlanSessionDraft[],
+  requiredBySession: Set<string>[],
+  byId: Map<string, ExerciseRef>,
+  targets: Record<MuscleSlug, number>,
+  caps: Record<MuscleSlug, number>,
+  profile: TrainingProfile,
+  h: PlanningHeuristics,
+): PlanSessionDraft[] {
+  const lookup = (id: string) => byId.get(id)
+  const out = sessions.map(s => ({ ...s, exercises: s.exercises.map(e => ({ ...e })) }))
+  const weekly = () => weeklySetsByMuscle({ sessions: out }, lookup, h.secondarySetCredit)
+  const entries = () =>
+    out.flatMap((s, si) => s.exercises.map((e, ei) => ({ s, si, e, ei, ref: byId.get(e.exerciseId)! }))).filter(x => x.ref)
+
+  /** Try to take one set (or one exercise) away from muscle `over`. Returns false if nothing can give. */
+  const relieve = (over: MuscleSlug, w: Record<MuscleSlug, number>): boolean => {
+    const primaryFor = entries()
+      .filter(x => x.ref.primaryMuscles.includes(over))
+      // Never starve another primary muscle well below its target to fix this one.
+      .filter(x => x.ref.primaryMuscles.every(m => m === over || w[m] - 1 >= targets[m] * 0.8))
+    // Secondary sources (rows → forearms, squats → glutes) may give a set back if their own primaries stay on target.
+    const secondaryFor = entries()
+      .filter(x => x.ref.secondaryMuscles.includes(over) && !x.ref.primaryMuscles.includes(over))
+      .filter(x => x.ref.primaryMuscles.every(m => w[m] - 1 >= targets[m] * 0.9))
+    // 1) remove a set: multi-primary (both credited) first, isolation before compound, most sets first;
+    //    secondary sources only when no primary source can give.
+    const r =
+      primaryFor
+        .filter(x => x.e.targetSets > h.setsPerExercise.min)
+        .sort(
+          (a, b) =>
+            b.ref.primaryMuscles.length - a.ref.primaryMuscles.length ||
+            (a.ref.category === "compound" ? 1 : 0) - (b.ref.category === "compound" ? 1 : 0) ||
+            b.e.targetSets - a.e.targetSets ||
+            b.ei - a.ei,
+        )[0] ?? secondaryFor.filter(x => x.e.targetSets > h.setsPerExercise.min).sort((a, b) => b.e.targetSets - a.e.targetSets || b.ei - a.ei)[0]
+    if (r) {
+      r.e.targetSets -= 1
+      return true
+    }
+    // 2) drop a non-mandatory exercise, keeping at least 3 per session.
+    const d = primaryFor
+      .filter(x => !requiredBySession[x.si]!.has(x.e.exerciseId) && x.s.exercises.length > 3)
+      .sort((a, b) => (a.ref.category === "compound" ? 1 : 0) - (b.ref.category === "compound" ? 1 : 0) || b.ei - a.ei)[0]
+    if (!d) return false
+    out[d.si] = { ...d.s, exercises: d.s.exercises.filter((_, i) => i !== d.ei) }
+    return true
+  }
+
+  for (let guard = 0; guard < 200; guard++) {
+    const w = weekly()
+    const over = MUSCLE_SLUGS.filter(m => w[m] > caps[m] + 1e-9).sort((a, b) => w[b] - caps[b] - (w[a] - caps[a]))
+    if (!over.some(m => relieve(m, w))) break
+  }
+
+  // Top up clear deficits (≥ 1.5 sets under target) with an extra set if time and caps allow.
+  for (let guard = 0; guard < 100; guard++) {
+    const w = weekly()
+    const under = MUSCLE_SLUGS.filter(m => targets[m] - w[m] >= 1.5).sort((a, b) => targets[b] - w[b] - (targets[a] - w[a]))
+    let changed = false
+    for (const m of under) {
+      const cand = entries()
+        .filter(x => x.ref.primaryMuscles.includes(m) && x.e.targetSets < h.setsPerExercise.max)
+        .filter(x => x.ref.primaryMuscles.every(p => w[p] + 1 <= caps[p]))
+        .filter(x => {
+          const trial = x.s.exercises.map((e, i) => (i === x.ei ? { ...e, targetSets: e.targetSets + 1 } : e))
+          return estimateSessionMinutes(trial, lookup, h) <= profile.sessionDurationMinutes
+        })
+        .sort((a, b) => a.ref.primaryMuscles.length - b.ref.primaryMuscles.length || a.e.targetSets - b.e.targetSets || a.si - b.si)[0]
+      if (cand) {
+        cand.e.targetSets += 1
+        changed = true
+        break
+      }
+    }
+    if (!changed) break
+  }
+
+  return out.map(s => {
+    const exercises = assignWarmups(s.exercises.map((e, i) => ({ ...e, sequence: i + 1 })), byId, h)
+    return { ...s, exercises, focusMuscles: sessionFocus(exercises, byId), estimatedDurationMinutes: estimateSessionMinutes(exercises, lookup, h) }
+  })
 }
 
 function buildRationale(
@@ -308,22 +535,53 @@ export function generatePlan(profile: TrainingProfile, exercises: ExerciseRef[],
 
   const byId = new Map(exercises.map(e => [e.id, e] as const))
   const targets = weeklySetTargets(profile, h)
+  const caps = weeklySetCaps(targets, h)
 
-  // Sessions per muscle → sets per session.
-  const sessionsPerMuscle = emptyMuscleRecord()
-  for (const s of template.sessions) for (const m of s.muscles) sessionsPerMuscle[m] += 1
-  const setsPerSession = emptyMuscleRecord()
-  for (const m of MUSCLE_SLUGS) setsPerSession[m] = sessionsPerMuscle[m] ? targets[m] / sessionsPerMuscle[m] : 0
-
-  const planExerciseIds = new Set<string>()
+  const sessionsLeft = emptyMuscleRecord()
+  for (const s of template.sessions) for (const m of s.muscles) sessionsLeft[m] += 1
+  const state: PlanState = {
+    targets,
+    caps,
+    planCredit: emptyMuscleRecord(),
+    sessionsLeft,
+    planExerciseIds: new Set(),
+    planPatternCounts: new Map(),
+    idsByKind: new Map(),
+  }
+  const requiredPerSession = assignRequiredSlots(template)
   const continuity = new Set(opts.continuityIds ?? [])
   const familiar = new Set(opts.familiarIds ?? [])
-  const sessions: PlanSessionDraft[] = []
+  const built: PlanSessionDraft[] = []
+  const requiredIds: Set<string>[] = []
   template.sessions.forEach((t, i) => {
-    const s = buildSession({ template: t, sessionIndex: i, profile, exercises, byId, setsPerSession, planExerciseIds, continuity, familiar, h })
-    for (const e of s.exercises) planExerciseIds.add(e.exerciseId)
-    sessions.push(s)
+    const { session, requiredIds: req } = buildSession({
+      template: t,
+      sessionIndex: i,
+      required: requiredPerSession[i] ?? [],
+      profile,
+      exercises,
+      byId,
+      state,
+      continuity,
+      familiar,
+      h,
+    })
+    for (const e of session.exercises) {
+      const ref = byId.get(e.exerciseId)
+      if (!ref) continue
+      state.planExerciseIds.add(e.exerciseId)
+      state.planPatternCounts.set(ref.movementPattern, (state.planPatternCounts.get(ref.movementPattern) ?? 0) + 1)
+      for (const m of ref.primaryMuscles) state.planCredit[m] += e.targetSets
+      for (const m of ref.secondaryMuscles) state.planCredit[m] += e.targetSets * h.secondarySetCredit
+    }
+    const kindIds = state.idsByKind.get(t.kind) ?? new Set<string>()
+    for (const e of session.exercises) kindIds.add(e.exerciseId)
+    state.idsByKind.set(t.kind, kindIds)
+    for (const m of t.muscles) state.sessionsLeft[m] -= 1
+    built.push(session)
+    requiredIds.push(req)
   })
+  const sessions = balancePlan(built, requiredIds, byId, targets, caps, profile, h)
 
   const scheduled = assignWeekdays(sessions, opts.weekdays ?? profile.preferredWeekdays)
   const weeklySets = weeklySetsByMuscle({ sessions: scheduled }, id => byId.get(id), h.secondarySetCredit)
@@ -339,11 +597,5 @@ export function generatePlan(profile: TrainingProfile, exercises: ExerciseRef[],
 }
 
 export function defaultPlanName(split: SplitType, frequency: number): string {
-  const label: Record<SplitType, string> = {
-    full_body: "Ganzkörper",
-    upper_lower: "Ober-/Unterkörper",
-    push_pull_legs: "Push/Pull/Legs",
-    custom: "Individuell",
-  }
-  return `${label[split]} · ${frequency}× pro Woche`
+  return `${SPLIT_LABELS[split]} · ${frequency}× pro Woche`
 }
