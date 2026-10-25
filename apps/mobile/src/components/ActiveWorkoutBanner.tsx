@@ -15,7 +15,7 @@ export function ActiveWorkoutBanner() {
   if (!workout) return null
   const done = workout.exercises.filter(e => !e.skipped && e.sets.some(s => s.completed)).length
   return (
-    <Pressable accessibilityRole="button" onPress={() => router.push(`/workout/${workout.id}`)} style={({ pressed }) => ({ opacity: pressed ? 0.9 : 1 })}>
+    <Pressable accessibilityRole="button" accessibilityLabel={`${workout.status === "paused" ? "Workout pausiert" : "Workout läuft"}: ${workout.name}, ${formatTimer(elapsed)}. Zum Workout`} onPress={() => router.push(`/workout/${workout.id}`)} style={({ pressed }) => ({ opacity: pressed ? 0.9 : 1 })}>
       <View style={{ backgroundColor: colors.surfaceStrong, borderRadius: radius.lg, padding: space[4], flexDirection: "row", alignItems: "center", gap: space[3] }}>
         <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: colors.accent }} />
         <View style={{ flex: 1 }}>
@@ -26,7 +26,7 @@ export function ActiveWorkoutBanner() {
             {formatTimer(elapsed)} · {done} von {workout.exercises.filter(e => !e.skipped).length} Übungen
           </Text>
         </View>
-        <SymbolView name="chevron.right" size={14} weight="semibold" tintColor={colors.textInverse} />
+        <SymbolView name="chevron.right" size={14} weight="semibold" tintColor={colors.textInverse} accessibilityElementsHidden importantForAccessibility="no" />
       </View>
     </Pressable>
   )

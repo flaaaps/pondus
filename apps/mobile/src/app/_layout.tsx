@@ -67,7 +67,7 @@ function Root() {
         <Stack.Screen name="(onboarding)" />
         <Stack.Screen name="workout/[id]" options={{ presentation: "fullScreenModal", gestureEnabled: false }} />
         <Stack.Screen name="workout/summary" options={{ presentation: "fullScreenModal", gestureEnabled: false }} />
-        <Stack.Screen name="workout/pick-exercise" options={{ presentation: "modal", headerShown: true, title: "Übung wählen", headerTintColor: colors.accent, headerStyle: { backgroundColor: colors.background } }} />
+        <Stack.Screen name="workout/pick-exercise" options={{ presentation: "modal", headerShown: true, title: "Übung wählen", headerTintColor: colors.accent, headerTitleStyle: { color: colors.textPrimary }, headerStyle: { backgroundColor: colors.background }, headerShadowVisible: false }} />
       </Stack>
     </>
   )

@@ -6,7 +6,7 @@ import { Button, Card, Chip, ErrorState, ListRow, LoadingState, Screen, Section,
 import { useActivePlan, useApplyAdjustment, useDiscardAdjustment, usePreviewAdjustment } from "@/features/plans/queries"
 import { useProfile } from "@/features/profile/queries"
 import { SPLIT_LABELS } from "@/lib/format"
-import { ApiError } from "@/lib/api-client"
+import { errorMessage } from "@/lib/errors"
 
 /** Change frequency / duration → preview the restructured plan → accept or discard. */
 export default function AdjustScreen() {
@@ -30,13 +30,13 @@ export default function AdjustScreen() {
 
   const onPreview = () => {
     if (result) void discard.mutateAsync(result.previewId).catch(() => {})
-    preview.mutate({ weeklyFrequency: curFreq, sessionDurationMinutes: curDur, splitType: split ?? undefined }, { onSuccess: setResult, onError: e => Alert.alert("Vorschau fehlgeschlagen", e instanceof ApiError ? e.message : "Unbekannter Fehler") })
+    preview.mutate({ weeklyFrequency: curFreq, sessionDurationMinutes: curDur, splitType: split ?? undefined }, { onSuccess: setResult, onError: e => Alert.alert("Vorschau fehlgeschlagen", errorMessage(e, "Unbekannter Fehler")) })
   }
   const onApply = () => {
     if (!result) return
     apply.mutate(result.previewId, {
       onSuccess: () => router.back(),
-      onError: e => Alert.alert("Übernehmen fehlgeschlagen", e instanceof ApiError ? e.message : "Unbekannter Fehler"),
+      onError: e => Alert.alert("Übernehmen fehlgeschlagen", errorMessage(e, "Unbekannter Fehler")),
     })
   }
   const onDiscard = () => {

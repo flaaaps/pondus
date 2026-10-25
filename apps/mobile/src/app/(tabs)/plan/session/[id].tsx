@@ -13,8 +13,8 @@ import { useStartWorkout } from "@/features/workout/use-start-workout"
 import { useExercisePicker } from "@/features/exercises/picker-store"
 import { useAllExercises } from "@/features/exercises/queries"
 import { ExerciseThumbnail } from "@/components/ExerciseMedia"
-import { WEEKDAYS_LONG, WEEKDAYS_SHORT } from "@/lib/format"
-import { ApiError } from "@/lib/api-client"
+import { WEEKDAYS_LONG } from "@/lib/format"
+import { errorMessage } from "@/lib/errors"
 
 /**
  * One training session of the plan template. Every change here creates a new
@@ -35,17 +35,19 @@ export default function SessionScreen() {
   const qc = useQueryClient()
   /**
    * Every edit creates a new plan version with new session ids. Pick the
-   * matching session from the response (same sequence) and switch the route
+   * matching session from the response (same sessionKey, else same sequence) and switch the route
    * to it, so the screen shows the change immediately.
    */
   const onEdited = (plan: PlanDto) => {
     const current = q.data?.session
-    const next = plan.currentVersion.sessions.find(s => s.sequence === current?.sequence) ?? plan.currentVersion.sessions.find(s => s.name === current?.name)
+    const sessions = plan.currentVersion.sessions
+    // sessionKey is stable across versions; sequence/name are the fallback for servers without it.
+    const next = (current?.sessionKey ? sessions.find(s => s.sessionKey === current.sessionKey) : undefined) ?? sessions.find(s => s.sequence === current?.sequence) ?? sessions.find(s => s.name === current?.name)
     if (!next) return void q.refetch()
     qc.setQueryData(queryKeys.session(next.id), { planId: plan.id, planName: plan.name, versionNumber: plan.currentVersion.versionNumber, session: next })
     if (next.id !== id) router.setParams({ id: next.id })
   }
-  const apply = (ops: PlanEditOp[]) => edit.mutate(ops, { onSuccess: onEdited, onError: e => Alert.alert("Änderung fehlgeschlagen", e instanceof ApiError ? e.message : "Unbekannter Fehler") })
+  const apply = (ops: PlanEditOp[]) => edit.mutate(ops, { onSuccess: onEdited, onError: e => Alert.alert("Änderung fehlgeschlagen", errorMessage(e, "Unbekannter Fehler")) })
 
   if (q.isLoading) return <LoadingState />
   if (q.isError || !q.data) return <ErrorState onRetry={() => void q.refetch()} />
@@ -111,9 +113,11 @@ export default function SessionScreen() {
                   subtitle={`${e.warmupSets ? `${e.warmupSets} Aufwärm- + ` : ""}${e.targetSets} × ${e.targetRepsMin}–${e.targetRepsMax} Wdh. · ${Math.round(e.restSeconds / 60 * 10) / 10} min Pause${e.targetRir !== null ? ` · RIR ${e.targetRir}` : ""}`}
                   leading={<ExerciseThumbnail slug={slugById.get(e.exerciseId)} size={60} />}
                   onPress={() => router.push(`/(tabs)/plan/exercise/${e.exerciseId}`)}
+                  accessibilityActions={[{ name: "options", label: "Optionen" }]}
+                  onAccessibilityAction={ev => ev.nativeEvent.actionName === "options" && onExerciseOptions(e, i)}
                   chevron={false}
                   trailing={
-                    <Pressable accessibilityRole="button" accessibilityLabel="Optionen" hitSlop={10} onPress={() => onExerciseOptions(e, i)} style={({ pressed }) => ({ opacity: pressed ? 0.5 : 1, padding: 4 })}>
+                    <Pressable accessibilityRole="button" accessibilityLabel={`Optionen für ${e.exerciseName}`} hitSlop={10} onPress={() => onExerciseOptions(e, i)} style={({ pressed }) => ({ opacity: pressed ? 0.5 : 1, padding: 4 })}>
                       <SymbolView name="ellipsis.circle" size={22} tintColor={colors.accent} />
                     </Pressable>
                   }
@@ -154,8 +158,8 @@ function ExerciseParamsEditor({ exercise, onSave, onCancel }: { exercise: PlanEx
         <View style={{ flex: 1 }}><NumberField label="Aufwärmen" value={warm} onChange={v => setWarm(v ?? 0)} step={1} min={0} max={5} compact /></View>
       </View>
       <View style={{ flexDirection: "row", gap: space[2] }}>
-        <View style={{ flex: 1 }}><NumberField label="Wdh. min" value={min} onChange={v => setMin(v ?? 1)} step={1} min={1} max={100} compact /></View>
-        <View style={{ flex: 1 }}><NumberField label="Wdh. max" value={max} onChange={v => setMax(v ?? 1)} step={1} min={1} max={100} compact /></View>
+        <View style={{ flex: 1 }}><NumberField label="Wdh. min" value={min} onChange={v => { const n = v ?? 1; setMin(n); if (n > max) setMax(n) }} step={1} min={1} max={100} compact /></View>
+        <View style={{ flex: 1 }}><NumberField label="Wdh. max" value={max} onChange={v => { const n = v ?? 1; setMax(n); if (n < min) setMin(n) }} step={1} min={1} max={100} compact /></View>
       </View>
       <View style={{ flexDirection: "row", gap: space[2] }}>
         <View style={{ flex: 1 }}><NumberField label="Pause (s)" value={rest} onChange={v => setRest(v ?? 0)} step={15} min={0} max={900} compact /></View>
@@ -163,9 +167,8 @@ function ExerciseParamsEditor({ exercise, onSave, onCancel }: { exercise: PlanEx
       </View>
       <View style={{ flexDirection: "row", gap: space[2], justifyContent: "flex-end" }}>
         <Button title="Abbrechen" variant="ghost" size="sm" onPress={onCancel} />
-        <Button title="Speichern" size="sm" disabled={min > max} onPress={() => onSave({ targetSets: sets, targetRepsMin: min, targetRepsMax: max, restSeconds: rest, targetRir: rir, warmupSets: warm })} />
+        <Button title="Speichern" size="sm" onPress={() => onSave({ targetSets: sets, targetRepsMin: min, targetRepsMax: max, restSeconds: rest, targetRir: rir, warmupSets: warm })} />
       </View>
-      <Text variant="footnote" color="tertiary">{WEEKDAYS_SHORT.length ? "" : ""}</Text>
     </View>
   )
 }

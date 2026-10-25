@@ -4,7 +4,7 @@ import { Stack, useRouter } from "expo-router"
 import { EQUIPMENT, EQUIPMENT_LABELS, MOVEMENT_PATTERNS, MUSCLE_GROUPS, type Equipment, type MuscleSlug } from "@pondus/shared"
 import { Button, Chip, Input, Screen, Section, SegmentedControl, Text, useTheme } from "@/design-system"
 import { useCreateExercise } from "@/features/exercises/queries"
-import { ApiError } from "@/lib/api-client"
+import { errorMessage } from "@/lib/errors"
 
 const PATTERN_LABELS: Partial<Record<string, string>> = {
   horizontal_push: "Horizontal drücken", vertical_push: "Vertikal drücken", horizontal_pull: "Horizontal ziehen", vertical_pull: "Vertikal ziehen", squat: "Kniebeuge", hinge: "Hüftbeuge", lunge: "Ausfallschritt",
@@ -19,20 +19,22 @@ export default function NewExerciseScreen() {
   const create = useCreateExercise()
   const [name, setName] = useState("")
   const [category, setCategory] = useState<"compound" | "isolation" | "core">("isolation")
-  const [pattern, setPattern] = useState<string>("elbow_flexion")
-  const [equipment, setEquipment] = useState<Equipment[]>(["dumbbell"])
-  const [loadType, setLoadType] = useState<"free_weight" | "machine" | "cable" | "bodyweight">("free_weight")
+  // No silent defaults: movement pattern and equipment must be chosen explicitly.
+  const [pattern, setPattern] = useState<string | null>(null)
+  const [equipment, setEquipment] = useState<Equipment[]>([])
+  const [loadType, setLoadType] = useState<"free_weight" | "machine" | "cable" | "bodyweight" | "assisted">("free_weight")
   const [primary, setPrimary] = useState<MuscleSlug[]>([])
   const [secondary, setSecondary] = useState<MuscleSlug[]>([])
   const [unilateral, setUnilateral] = useState(false)
   const [description, setDescription] = useState("")
   const toggle = <T,>(list: T[], v: T, max = 99) => (list.includes(v) ? list.filter(x => x !== v) : list.length < max ? [...list, v] : list)
-  const valid = name.trim().length >= 2 && primary.length > 0 && equipment.length > 0
+  const missing = [name.trim().length < 2 ? "Name" : null, primary.length ? null : "Hauptmuskel", equipment.length ? null : "Equipment", pattern ? null : "Bewegungsmuster"].filter((x): x is string => !!x)
+  const valid = missing.length === 0
 
   const submit = () =>
     create.mutate(
-      { nameDe: name.trim(), category, movementPattern: pattern, equipment, loadType, primaryMuscles: primary, secondaryMuscles: secondary.filter(m => !primary.includes(m)), isUnilateral: unilateral, description: description.trim() || undefined },
-      { onSuccess: e => router.replace(`/(tabs)/exercises/${e.id}`), onError: e => Alert.alert("Speichern fehlgeschlagen", e instanceof ApiError ? e.message : "Unbekannter Fehler") },
+      { nameDe: name.trim(), category, movementPattern: pattern!, equipment, loadType, primaryMuscles: primary, secondaryMuscles: secondary.filter(m => !primary.includes(m)), isUnilateral: unilateral, description: description.trim() || undefined },
+      { onSuccess: e => router.replace(`/(tabs)/exercises/${e.id}`), onError: e => Alert.alert("Speichern fehlgeschlagen", errorMessage(e, "Unbekannter Fehler")) },
     )
 
   return (
@@ -44,7 +46,12 @@ export default function NewExerciseScreen() {
           <SegmentedControl options={[{ value: "compound", label: "Grundübung" }, { value: "isolation", label: "Isolation" }, { value: "core", label: "Rumpf" }]} value={category} onChange={setCategory} />
         </Section>
         <Section title="Belastung">
-          <SegmentedControl options={[{ value: "free_weight", label: "Frei" }, { value: "machine", label: "Maschine" }, { value: "cable", label: "Kabel" }, { value: "bodyweight", label: "Körper" }]} value={loadType} onChange={setLoadType} />
+          <SegmentedControl options={[{ value: "free_weight", label: "Frei" }, { value: "machine", label: "Maschine" }, { value: "cable", label: "Kabel" }, { value: "bodyweight", label: "Körper" }, { value: "assisted", label: "Unterst." }]} value={loadType} onChange={setLoadType} />
+          {loadType === "assisted" ? (
+            <Text variant="footnote" color="tertiary">
+              Unterstützt (z. B. Klimmzug- oder Dipmaschine): Du trägst die Unterstützung ein, weniger ist schwerer.
+            </Text>
+          ) : null}
         </Section>
         <Section title="Hauptmuskeln (max. 3)">
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: space[2] }}>{MUSCLE_GROUPS.map(m => <Chip key={m.slug} label={m.nameDe} size="sm" selected={primary.includes(m.slug)} onPress={() => setPrimary(toggle(primary, m.slug, 3))} />)}</View>
@@ -66,6 +73,11 @@ export default function NewExerciseScreen() {
         </Section>
         <Input label="Beschreibung (optional)" value={description} onChangeText={setDescription} multiline style={{ height: 96, paddingTop: 12 }} />
         <Button title="Übung speichern" fullWidth disabled={!valid} loading={create.isPending} onPress={submit} />
+        {!valid ? (
+          <Text variant="footnote" color="secondary">
+            Noch auswählen: {missing.join(", ")}.
+          </Text>
+        ) : null}
         <Text variant="footnote" color="tertiary">
           Eigene Übungen sind nur für dich sichtbar und lassen sich wie alle anderen in Pläne und Workouts einbauen.
         </Text>

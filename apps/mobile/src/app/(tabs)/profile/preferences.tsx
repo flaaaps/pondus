@@ -6,6 +6,7 @@ import { Button, Card, Chip, ErrorState, LoadingState, Screen, Text, useTheme } 
 import { useAllExercises } from "@/features/exercises/queries"
 import { useExercisePreferences, useProfile, useUpdateExercisePreferences } from "@/features/profile/queries"
 import { ExercisePreferenceRow } from "@/components/ExercisePreferenceRow"
+import { errorMessage } from "@/lib/errors"
 
 export default function PreferencesScreen() {
   const { space } = useTheme()
@@ -27,7 +28,7 @@ export default function PreferencesScreen() {
     setDraft({ preferred: v === "preferred" ? [...new Set([...cur.preferred, id])] : cur.preferred.filter(x => x !== id), excluded: v === "excluded" ? [...new Set([...cur.excluded, id])] : cur.excluded.filter(x => x !== id) })
   return (
     <>
-      <Stack.Screen options={{ title: "Übungspräferenzen", headerLargeTitle: false, headerRight: () => (draft ? <Button title="Speichern" size="sm" variant="ghost" loading={update.isPending} onPress={() => update.mutate(cur, { onSuccess: () => setDraft(null), onError: e => Alert.alert("Fehler", e instanceof Error ? e.message : "") })} /> : null) }} />
+      <Stack.Screen options={{ title: "Übungspräferenzen", headerLargeTitle: false, headerRight: () => (draft ? <Button title="Speichern" size="sm" variant="ghost" loading={update.isPending} onPress={() => update.mutate(cur, { onSuccess: () => setDraft(null), onError: e => Alert.alert("Fehler", errorMessage(e)) })} /> : null) }} />
       <Screen>
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: space[2] }}>
           {MUSCLE_GROUPS.map(g => (

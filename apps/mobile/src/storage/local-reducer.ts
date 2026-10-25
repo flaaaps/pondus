@@ -114,3 +114,31 @@ export function elapsedSeconds(w: WorkoutDto, now = Date.now()): number {
   if (w.status === "paused" && w.pausedAt) paused += Math.max(0, (now - new Date(w.pausedAt).getTime()) / 1000)
   return Math.max(0, Math.round((now - started) / 1000 - paused))
 }
+
+/**
+ * The server copy is authoritative for everything it knows, but values typed
+ * into not-yet-completed sets only live locally until the set is ticked off.
+ * Carry those drafts over when adopting the server copy, so a sync never
+ * wipes what the user just entered.
+ */
+export function mergeLocalDrafts(server: WorkoutDto, local: WorkoutDto | null): WorkoutDto {
+  if (!local) return server
+  const key = (x: { id: string; clientId?: string | null }) => x.clientId ?? x.id
+  return {
+    ...server,
+    exercises: server.exercises.map(se => {
+      const le = local.exercises.find(e => key(e) === key(se) || e.id === se.id)
+      if (!le) return se
+      const sets = se.sets.map(s => ({ ...s }))
+      for (const ls of le.sets) {
+        if (ls.completed) continue
+        const target = sets.find(s => key(s) === key(ls) || s.id === ls.id) ?? sets.find(s => s.setNumber === ls.setNumber && !s.completed)
+        if (target) {
+          if (target.completed) continue
+          Object.assign(target, { setType: ls.setType, weightGrams: ls.weightGrams, reps: ls.reps, rir: ls.rir, targetWeightGrams: target.targetWeightGrams ?? ls.targetWeightGrams, targetReps: target.targetReps ?? ls.targetReps })
+        } else if (!sets.some(s => s.setNumber === ls.setNumber)) sets.push({ ...ls })
+      }
+      return { ...se, sets: sets.sort((a, b) => a.setNumber - b.setNumber) }
+    }),
+  }
+}

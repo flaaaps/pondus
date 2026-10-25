@@ -172,7 +172,7 @@ export const motion = {
 export const sizes = {
   touchTarget: 44,
   buttonHeight: 52,
-  buttonHeightSmall: 40,
+  buttonHeightSmall: 44,
   inputHeight: 52,
   iconSm: 18,
   iconMd: 22,

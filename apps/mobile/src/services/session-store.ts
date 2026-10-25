@@ -36,9 +36,12 @@ interface SessionState {
 }
 
 export const useSessionStore = create<SessionState>()((set, get) => {
+  /** True while a manual sign-out runs: late 401s from in-flight requests must not report an expired session. */
+  let signingOut = false
   const api = createApiClient({
     tokens: secureTokens,
     onSessionExpired: () => {
+      if (signingOut || get().status === "signed_out") return
       void finishSignOut(true)
     },
   })
@@ -82,13 +85,21 @@ export const useSessionStore = create<SessionState>()((set, get) => {
       await adopt(await api.post<AuthResponse>("/api/v1/auth/register", { email, password, displayName }, { auth: false }))
     },
     async signOut() {
-      const tokens = await secureTokens.get()
+      // While signing out, 401s from requests still in flight (or from the logout call itself, when the
+      // refresh token is already gone) must not end up as "session expired" on the login screen.
+      signingOut = true
       try {
-        if (tokens) await api.post("/api/v1/auth/logout", { refreshToken: tokens.refreshToken })
-      } catch {
-        /* offline logout is fine */
+        await queryClient.cancelQueries()
+        const tokens = await secureTokens.get()
+        try {
+          if (tokens) await api.post("/api/v1/auth/logout", { refreshToken: tokens.refreshToken })
+        } catch {
+          /* offline logout is fine */
+        }
+        await finishSignOut(false)
+      } finally {
+        signingOut = false
       }
-      await finishSignOut(false)
     },
     setUser: user => {
       void SecureStore.setItemAsync(USER_KEY, JSON.stringify(user))

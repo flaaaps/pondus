@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { tonnageGrams, totalReps, workingSetCount } from "@pondus/shared"
 import { Button, Card, ListRow, LoadingState, Screen, Section, Stat, Text, useTheme } from "@/design-system"
 import { useWorkoutSummary } from "@/features/progress/queries"
+import { useAllExercises } from "@/features/exercises/queries"
 import { useActiveWorkoutStore } from "@/features/workout/active-workout-store"
 import { useSettingsStore } from "@/services/settings-store"
 import { activeWorkoutStorage } from "@/storage/active-workout"
@@ -25,6 +26,8 @@ export default function SummaryScreen() {
   const serverId = id || (pending === 0 ? serverIdFromStore : null) || undefined
   const summary = useWorkoutSummary(serverId)
   const localWorkout = activeWorkoutStorage.loadLastCompleted()
+  const library = useAllExercises()
+  const isAssisted = (exerciseId: string | null) => !!exerciseId && library.data?.find(e => e.id === exerciseId)?.loadType === "assisted"
 
   const s = summary.data
   const w = s?.workout ?? localWorkout
@@ -40,16 +43,16 @@ export default function SummaryScreen() {
     <Screen title="Geschafft!" subtitle={w.name} contentStyle={{ paddingTop: insets.top + space[4] }}>
       <Card tone="strong" padding="lg">
         <View style={{ flexDirection: "row", gap: space[3] }}>
-          <Stat label="Dauer" value={formatDuration(duration)} tone="primary" />
-          <Stat label="Arbeitssätze" value={String(workingSets)} />
+          <Stat label="Dauer" value={formatDuration(duration)} inverse />
+          <Stat label="Arbeitssätze" value={String(workingSets)} inverse />
         </View>
         <View style={{ height: space[3] }} />
         <View style={{ flexDirection: "row", gap: space[3] }}>
-          <Stat label="Wiederholungen" value={String(reps)} />
-          <Stat label="Bewegt" value={formatTonnage(tonnage, unit)} tone="accent" />
+          <Stat label="Wiederholungen" value={String(reps)} inverse />
+          <Stat label="Bewegt" value={formatTonnage(tonnage, unit)} tone="accent" inverse />
         </View>
         <Text variant="footnote" color="inverse" style={{ opacity: 0.7, marginTop: space[3] }}>
-          {exercisesDone} Übungen · Bewegtes Gewicht = Gewicht × Wiederholungen aller Arbeitssätze.
+          {exercisesDone} {exercisesDone === 1 ? "Übung" : "Übungen"} · Bewegtes Gewicht = Gewicht × Wiederholungen aller Arbeitssätze.
         </Text>
       </Card>
 
@@ -96,7 +99,7 @@ export default function SummaryScreen() {
           {w.exercises
             .filter(e => !e.skipped)
             .map((e, i, arr) => (
-              <ListRow key={e.id} title={e.exerciseNameSnapshot} subtitle={e.sets.filter(x => x.completed && x.setType !== "warmup").map(x => `${formatWeight(x.weightGrams, unit, { withUnit: false })}×${x.reps ?? "–"}`).join("  ") || "–"} last={i === arr.length - 1} />
+              <ListRow key={e.id} title={e.exerciseNameSnapshot} subtitle={(e.sets.filter(x => x.completed && x.setType !== "warmup").map(x => `${formatWeight(x.weightGrams, unit, { withUnit: false })}×${x.reps ?? "–"}`).join("  ") || "–") + (isAssisted(e.exerciseId) ? ` (${unit} Unterstützung)` : "")} last={i === arr.length - 1} />
             ))}
         </Card>
       </Section>

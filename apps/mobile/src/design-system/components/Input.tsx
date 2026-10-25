@@ -15,12 +15,14 @@ export const Input = forwardRef<ComponentRef<typeof TextInput>, InputProps>(func
   return (
     <View style={{ gap: space[2] }}>
       {label ? (
-        <Text variant="calloutStrong" color="secondary">
+        <Text variant="calloutStrong" color="secondary" importantForAccessibility="no" accessibilityElementsHidden>
           {label}
         </Text>
       ) : null}
       <TextInput
         ref={ref}
+        accessibilityLabel={label}
+        accessibilityHint={error ?? hint}
         placeholderTextColor={colors.textTertiary}
         selectionColor={colors.accent}
         onFocus={e => {

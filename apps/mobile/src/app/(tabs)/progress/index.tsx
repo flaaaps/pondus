@@ -59,6 +59,35 @@ export default function ProgressScreen() {
             </Card>
           </Section>
 
+          {o.muscleWeeklySets?.length ? (
+            <Section title="Diese Woche: Sätze vs. Ziel">
+              <Card>
+                {o.muscleWeeklySets.map(m => {
+                  const fmtSets = (v: number) => v.toLocaleString("de-DE", { maximumFractionDigits: 1 })
+                  const reached = m.targetSets > 0 && m.actualSets >= m.targetSets
+                  const scaleMax = Math.max(m.targetSets, m.actualSets, 1)
+                  return (
+                    <View key={m.muscle} accessible accessibilityLabel={`${m.label}: ${fmtSets(m.actualSets)} von ${fmtSets(m.targetSets)} Sätzen${reached ? ", Ziel erreicht" : ""}`} style={{ flexDirection: "row", alignItems: "center", gap: space[3], marginBottom: space[2] }}>
+                      <Text variant="callout" style={{ width: 110 }} numberOfLines={1}>
+                        {m.label}
+                      </Text>
+                      <View style={{ flex: 1, height: 10, borderRadius: 5, backgroundColor: colors.chartMuted, overflow: "hidden" }}>
+                        <View style={{ width: `${(m.actualSets / scaleMax) * 100}%`, height: "100%", backgroundColor: reached ? colors.success : colors.chartPrimary }} />
+                        {m.targetSets > 0 ? <View style={{ position: "absolute", left: `${(m.targetSets / scaleMax) * 100}%`, marginLeft: -1, top: 0, bottom: 0, width: 2, backgroundColor: colors.textPrimary }} /> : null}
+                      </View>
+                      <Text variant="caption" color={reached ? "success" : "secondary"} style={{ width: 56, textAlign: "right" }} numberOfLines={1}>
+                        {fmtSets(m.actualSets)}/{fmtSets(m.targetSets)}
+                      </Text>
+                    </View>
+                  )
+                })}
+                <Text variant="footnote" color="tertiary">
+                  Abgeschlossene Arbeitssätze dieser Woche gegen das Wochenziel deines Plans (Strich). Nebenmuskeln zählen halb.
+                </Text>
+              </Card>
+            </Section>
+          ) : null}
+
           {o.muscleDistribution.length ? (
             <Section title="Muskelgruppen">
               <Card>

@@ -87,6 +87,7 @@ export function ExerciseList({ onPress, header, initialFilters, contentBottomIns
             subtitle={`${item.primaryMuscles.map(m => MUSCLE_GROUPS.find(g => g.slug === m)?.nameDe ?? m).join(", ")} · ${item.equipment.map(e => EQUIPMENT_LABELS[e].de).join(", ")}`}
             trailing={item.isFavorite ? <SymbolView name="heart.fill" size={14} tintColor={colors.accent} /> : item.isSystem ? undefined : <SymbolView name="person" size={14} tintColor={colors.textTertiary} />}
             onPress={() => onPress(item)}
+            accessibilityLabel={`${item.nameDe}${item.isFavorite ? ", Favorit" : ""}${item.isSystem ? "" : ", eigene Übung"}, ${item.primaryMuscles.map(m => MUSCLE_GROUPS.find(g => g.slug === m)?.nameDe ?? m).join(", ")}`}
             chevron
             style={{ paddingHorizontal: space[3] }}
           />

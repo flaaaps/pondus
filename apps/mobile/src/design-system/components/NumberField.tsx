@@ -42,7 +42,8 @@ export function NumberField({ value, onChange, step, min = 0, max = 100000, deci
     const base = value ?? 0
     onChange(clamp(round(base + dir * step, decimals), min, max))
   }
-  const size = compact ? 40 : sizes.touchTarget
+  // Compact steppers are narrower but keep the 44 pt height, so the field fits narrow columns without overlapping the input.
+  const stepper = compact ? { width: 30, height: sizes.touchTarget } : { width: sizes.touchTarget, height: sizes.touchTarget }
 
   return (
     <View style={{ gap: space[1] }}>
@@ -52,7 +53,7 @@ export function NumberField({ value, onChange, step, min = 0, max = 100000, deci
         </Text>
       ) : null}
       <View style={[styles.row, { backgroundColor: colors.surfaceMuted, borderRadius: radius.md }]}>
-        <Pressable accessibilityRole="button" accessibilityLabel={`${accessibilityLabel ?? label ?? "Wert"} verringern`} onPress={() => bump(-1)} hitSlop={6} style={[styles.stepper, { width: size, height: size }]}>
+        <Pressable accessibilityRole="button" accessibilityLabel={`${accessibilityLabel ?? label ?? "Wert"} verringern`} onPress={() => bump(-1)} hitSlop={compact ? { top: 2, bottom: 2 } : 6} style={[styles.stepper, stepper]}>
           <Text variant="title3" color="secondary">
             −
           </Text>
@@ -71,9 +72,10 @@ export function NumberField({ value, onChange, step, min = 0, max = 100000, deci
             keyboardType={decimals > 0 ? "decimal-pad" : "number-pad"}
             returnKeyType="done"
             selectTextOnFocus
+            maxFontSizeMultiplier={compact ? 1.05 : 1.3}
             placeholder={placeholder}
             placeholderTextColor={colors.textTertiary}
-            style={[typography.numeral, compact ? { fontSize: 20, lineHeight: 24 } : null, { color: colors.textPrimary, textAlign: "center", minWidth: 56, paddingVertical: 0 }]}
+            style={[typography.numeral, compact ? { fontSize: 19, lineHeight: 24 } : null, { color: colors.textPrimary, textAlign: "center", minWidth: compact ? 0 : 56, flex: compact ? 1 : undefined, paddingVertical: 0, paddingHorizontal: 0 }]}
           />
           {suffix ? (
             <Text variant="caption" color="tertiary">
@@ -81,7 +83,7 @@ export function NumberField({ value, onChange, step, min = 0, max = 100000, deci
             </Text>
           ) : null}
         </View>
-        <Pressable accessibilityRole="button" accessibilityLabel={`${accessibilityLabel ?? label ?? "Wert"} erhöhen`} onPress={() => bump(1)} hitSlop={6} style={[styles.stepper, { width: size, height: size }]}>
+        <Pressable accessibilityRole="button" accessibilityLabel={`${accessibilityLabel ?? label ?? "Wert"} erhöhen`} onPress={() => bump(1)} hitSlop={compact ? { top: 2, bottom: 2 } : 6} style={[styles.stepper, stepper]}>
           <Text variant="title3" color="secondary">
             +
           </Text>

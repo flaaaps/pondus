@@ -24,28 +24,31 @@ export function RestTimerBar() {
   const remaining = timer.remaining()
   const paused = timer.remainingWhenPaused !== null
   const pct = timer.durationSeconds ? remaining / timer.durationSeconds : 0
-  const Btn = ({ label, onPress, icon }: { label: string; onPress: () => void; icon?: Parameters<typeof SymbolView>[0]["name"] }) => (
-    <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={() => { haptic("selection"); onPress() }} hitSlop={6} style={({ pressed }) => ({ paddingHorizontal: space[3], height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", backgroundColor: pressed ? colors.surfaceMuted : "transparent", flexDirection: "row", gap: 4 })}>
-      {icon ? <SymbolView name={icon} size={16} weight="semibold" tintColor={colors.textPrimary} /> : null}
-      <Text variant="calloutStrong">{label}</Text>
+  const Btn = ({ label, a11y, onPress, icon }: { label: string; a11y: string; onPress: () => void; icon?: Parameters<typeof SymbolView>[0]["name"] }) => (
+    <Pressable accessibilityRole="button" accessibilityLabel={a11y} onPress={() => { haptic("selection"); onPress() }} style={({ pressed }) => ({ flex: 1, minHeight: 44, borderRadius: 22, alignItems: "center", justifyContent: "center", backgroundColor: pressed ? colors.surfaceMuted : "transparent", flexDirection: "row", gap: 4 })}>
+      {icon ? <SymbolView name={icon} size={15} weight="semibold" tintColor={colors.textPrimary} accessibilityElementsHidden importantForAccessibility="no" /> : null}
+      <Text variant="calloutStrong" numberOfLines={1} maxFontSizeMultiplier={1.2}>
+        {label}
+      </Text>
     </Pressable>
   )
+  const title = paused ? "Pause angehalten" : timer.label ? `Pause · ${timer.label}` : "Pause"
   return (
-    <GlassSurface interactive style={{ padding: space[2], paddingLeft: space[4] }}>
-      <View style={{ flexDirection: "row", alignItems: "center", gap: space[2] }}>
-        <View style={{ flex: 1 }}>
-          <Text variant="caption" color="tertiary">
-            {paused ? "PAUSE ANGEHALTEN" : timer.label ? `PAUSE · ${timer.label.toUpperCase()}` : "PAUSE"}
-          </Text>
-          <Text variant="numeral">{formatTimer(remaining)}</Text>
-        </View>
-        <Btn label="−15" onPress={() => timer.adjust(-15)} />
-        <Btn label="+15" onPress={() => timer.adjust(15)} />
-        <Btn label={paused ? "Weiter" : "Halt"} icon={paused ? "play.fill" : "pause.fill"} onPress={() => (paused ? timer.resume() : timer.pause())} />
-        <Btn label="Fertig" icon="xmark" onPress={() => timer.stop()} />
+    <GlassSurface interactive style={{ paddingHorizontal: space[3], paddingTop: space[2], paddingBottom: space[1] }}>
+      <View accessible accessibilityRole="timer" accessibilityLabel={`${title}, noch ${formatTimer(remaining)}`} style={{ flexDirection: "row", alignItems: "center", gap: space[3], paddingHorizontal: space[1] }}>
+        <Text variant="footnote" color="secondary" numberOfLines={1} style={{ flex: 1 }}>
+          {title}
+        </Text>
+        <Text variant="numeral" maxFontSizeMultiplier={1.2}>{formatTimer(remaining)}</Text>
       </View>
-      <View style={{ height: 3, marginTop: space[2], borderRadius: 2, backgroundColor: colors.chartMuted, overflow: "hidden" }}>
+      <View style={{ height: 3, marginTop: space[2], marginHorizontal: space[1], borderRadius: 2, backgroundColor: colors.chartMuted, overflow: "hidden" }}>
         <View style={{ width: `${pct * 100}%`, height: "100%", backgroundColor: colors.accent }} />
+      </View>
+      <View style={{ flexDirection: "row", alignItems: "center", marginTop: space[1] }}>
+        <Btn label="−15 s" a11y="15 Sekunden weniger" onPress={() => timer.adjust(-15)} />
+        <Btn label="+15 s" a11y="15 Sekunden mehr" onPress={() => timer.adjust(15)} />
+        <Btn label={paused ? "Weiter" : "Halt"} a11y={paused ? "Pausentimer fortsetzen" : "Pausentimer anhalten"} icon={paused ? "play.fill" : "pause.fill"} onPress={() => (paused ? timer.resume() : timer.pause())} />
+        <Btn label="Fertig" a11y="Pause beenden" icon="xmark" onPress={() => timer.stop()} />
       </View>
     </GlassSurface>
   )

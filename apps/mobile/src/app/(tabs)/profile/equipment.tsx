@@ -5,6 +5,7 @@ import { ENVIRONMENT_EQUIPMENT, EQUIPMENT, EQUIPMENT_LABELS, TRAINING_ENVIRONMEN
 import { Button, Chip, ErrorState, LoadingState, Screen, Section, Text, useTheme } from "@/design-system"
 import { useProfile, useUpdateProfile } from "@/features/profile/queries"
 import { ENVIRONMENT_LABELS } from "@/lib/format"
+import { errorMessage } from "@/lib/errors"
 
 export default function EquipmentScreen() {
   const { space } = useTheme()
@@ -38,7 +39,7 @@ export default function EquipmentScreen() {
         <Text variant="footnote" color="tertiary">
           Übungen, die du mit deinem Equipment nicht ausführen kannst, werden bei der Planung und bei Alternativen ausgeblendet.
         </Text>
-        <Button title="Speichern" fullWidth loading={update.isPending} disabled={!curEq.length} onPress={() => update.mutate({ environment: curEnv, availableEquipment: curEq }, { onSuccess: () => router.back(), onError: e => Alert.alert("Fehler", e instanceof Error ? e.message : "") })} />
+        <Button title="Speichern" fullWidth loading={update.isPending} disabled={!curEq.length} onPress={() => update.mutate({ environment: curEnv, availableEquipment: curEq }, { onSuccess: () => router.back(), onError: e => Alert.alert("Fehler", errorMessage(e)) })} />
       </Screen>
     </>
   )

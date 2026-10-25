@@ -1,11 +1,12 @@
-import { useState } from "react"
-import { View } from "react-native"
+import { useRef, useState, type ComponentRef } from "react"
+import { View, type TextInput } from "react-native"
 import { Link, useRouter } from "expo-router"
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { Button, Input, Text, useTheme } from "@/design-system"
 import { BrandMark } from "@/components/BrandMark"
 import { ApiError } from "@/lib/api-client"
+import { errorMessage, isValidEmail } from "@/lib/errors"
 import { useSessionStore } from "@/services/session-store"
 
 export default function LoginScreen() {
@@ -17,17 +18,21 @@ export default function LoginScreen() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [error, setError] = useState<string | null>(null)
+  const [emailError, setEmailError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const passwordRef = useRef<ComponentRef<typeof TextInput>>(null)
 
   const submit = async () => {
     setError(null)
+    setEmailError(null)
     if (!email.trim() || !password) return setError("Bitte E-Mail und Passwort eingeben.")
+    if (!isValidEmail(email)) return setEmailError("Bitte eine gültige E-Mail-Adresse eingeben.")
     setLoading(true)
     try {
       await signIn(email.trim(), password)
       router.replace("/(tabs)")
     } catch (err) {
-      setError(err instanceof ApiError ? (err.status === 401 ? "E-Mail oder Passwort ist falsch." : err.isNetwork ? "Keine Verbindung zum Server." : err.message) : "Anmeldung fehlgeschlagen.")
+      setError(err instanceof ApiError && err.status === 401 ? "E-Mail oder Passwort ist falsch." : errorMessage(err, "Anmeldung fehlgeschlagen."))
     } finally {
       setLoading(false)
     }
@@ -48,8 +53,8 @@ export default function LoginScreen() {
         </Text>
       ) : null}
       <View style={{ gap: space[4] }}>
-        <Input label="E-Mail" value={email} onChangeText={setEmail} autoCapitalize="none" autoComplete="email" keyboardType="email-address" textContentType="emailAddress" returnKeyType="next" />
-        <Input label="Passwort" value={password} onChangeText={setPassword} secureTextEntry textContentType="password" returnKeyType="go" onSubmitEditing={() => void submit()} error={error} />
+        <Input label="E-Mail" value={email} onChangeText={setEmail} autoCapitalize="none" autoComplete="email" keyboardType="email-address" textContentType="emailAddress" returnKeyType="next" error={emailError} submitBehavior="submit" onSubmitEditing={() => passwordRef.current?.focus()} />
+        <Input ref={passwordRef} label="Passwort" value={password} onChangeText={setPassword} secureTextEntry textContentType="password" returnKeyType="go" onSubmitEditing={() => void submit()} error={error} />
         <Button title="Anmelden" fullWidth loading={loading} onPress={() => void submit()} />
       </View>
       <View style={{ flexDirection: "row", gap: space[1], justifyContent: "center", marginTop: "auto" }}>

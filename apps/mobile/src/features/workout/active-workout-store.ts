@@ -1,9 +1,9 @@
 import { create } from "zustand"
 import type { PlanSessionDto, SyncMutation, WorkoutDto, WorkoutExerciseDto, WorkoutSetDto, ExerciseDto } from "@pondus/shared"
 import { ApiError, type ApiClient } from "@/lib/api-client"
-import { queryClient, queryKeys } from "@/lib/query-client"
+import { queryClient } from "@/lib/query-client"
 import { activeWorkoutStorage } from "@/storage/active-workout"
-import { applyLocalMutation } from "@/storage/local-reducer"
+import { applyLocalMutation, mergeLocalDrafts } from "@/storage/local-reducer"
 import { createOutbox, sqliteOutboxStorage, type Outbox } from "@/storage/outbox"
 import { uuid } from "@/lib/uuid"
 
@@ -27,6 +27,8 @@ interface ActiveWorkoutState {
   flush: (api: ApiClient) => Promise<void>
   addExercise: (api: ApiClient, exercise: ExerciseDto, opts?: { replaces?: WorkoutExerciseDto; targetSets?: number; restSeconds?: number }) => void
   upsertSet: (api: ApiClient, exercise: WorkoutExerciseDto, set: Partial<WorkoutSetDto> & { clientId: string; setNumber: number }) => void
+  /** Edit a not-yet-completed set locally (persisted, not queued); it syncs when completed. */
+  updateLocalSet: (exerciseId: string, setId: string, patch: Partial<WorkoutSetDto>) => void
   addSet: (api: ApiClient, exercise: WorkoutExerciseDto) => void
   deleteSet: (api: ApiClient, set: WorkoutSetDto) => void
   skipExercise: (api: ApiClient, exercise: WorkoutExerciseDto, skipped: boolean) => void
@@ -56,6 +58,13 @@ function newSet(setNumber: number, prev?: WorkoutSetDto | null, targetReps?: num
     targetWeightGrams: prev?.weightGrams ?? null,
     targetReps: prev?.reps ?? targetReps ?? null,
   }
+}
+/** Server views that change when a workout is completed or cancelled. */
+function invalidateWorkoutViews() {
+  void queryClient.invalidateQueries({ queryKey: ["workouts"] })
+  void queryClient.invalidateQueries({ queryKey: ["progress"] })
+  void queryClient.invalidateQueries({ queryKey: ["plans", "week"] })
+  void queryClient.invalidateQueries({ queryKey: ["exercises"] })
 }
 const setToClientSet = (s: WorkoutSetDto) => {
   const id = s.clientId ?? s.id
@@ -200,6 +209,7 @@ export const useActiveWorkoutStore = create<ActiveWorkoutState>()((set, get) => 
       const box = getOutbox()
       if (!box.size()) return set({ pending: 0, sync: "idle" })
       set({ sync: "syncing" })
+      const hadActiveWorkout = !!get().workout
       const result = await box.flush(mutations => api.post("/api/v1/sync/workouts", { mutations }), { isNetworkError: err => err instanceof ApiError && err.isNetwork })
       if (result.offline) return set({ sync: "offline", pending: box.size() })
       if (result.rejected.length) set(s => ({ rejected: [...s.rejected, ...result.rejected.map(r => r.message)].slice(-5) }))
@@ -215,15 +225,15 @@ export const useActiveWorkoutStore = create<ActiveWorkoutState>()((set, get) => 
               activeWorkoutStorage.saveLastCompleted(dto)
               persist(null)
               set({ serverId: dto.id })
-              void queryClient.invalidateQueries({ queryKey: ["workouts"] })
-              void queryClient.invalidateQueries({ queryKey: ["progress"] })
-              void queryClient.invalidateQueries({ queryKey: queryKeys.week() })
-            } else adoptServer(dto)
+              invalidateWorkoutViews()
+            } else adoptServer(mergeLocalDrafts(dto, get().workout))
           }
         } catch {
           /* keep local copy */
         }
       }
+      // A workout finished or discarded offline has no active slot any more; once its queue drains, refresh the server views.
+      if (!hadActiveWorkout && result.sent > 0 && box.size() === 0) invalidateWorkoutViews()
       set({ sync: box.size() ? "error" : "idle", pending: box.size(), lastSyncError: result.rejected[0]?.message ?? null })
     },
 
@@ -304,6 +314,12 @@ export const useActiveWorkoutStore = create<ActiveWorkoutState>()((set, get) => 
       persist({ ...w, exercises: w.exercises.map(e => (e.id === exercise.id ? { ...e, sets: [...e.sets, s] } : e)) })
     },
 
+    updateLocalSet(exerciseId, setId, patch) {
+      const w = get().workout
+      if (!w) return
+      persist({ ...w, exercises: w.exercises.map(e => (e.id !== exerciseId ? e : { ...e, sets: e.sets.map(s => (s.id === setId ? { ...s, ...patch } : s)) })) })
+    },
+
     deleteSet(api, s) {
       const w = get().workout
       if (!w) return
@@ -337,10 +353,7 @@ export const useActiveWorkoutStore = create<ActiveWorkoutState>()((set, get) => 
       persist(null)
       await get().flush(api)
       const serverId = get().serverId
-      void queryClient.invalidateQueries({ queryKey: ["workouts"] })
-      void queryClient.invalidateQueries({ queryKey: ["progress"] })
-      void queryClient.invalidateQueries({ queryKey: ["plans", "week"] })
-      void queryClient.invalidateQueries({ queryKey: ["exercises"] })
+      invalidateWorkoutViews()
       return { workout: local, serverId: getOutbox().size() === 0 ? serverId : null }
     },
 

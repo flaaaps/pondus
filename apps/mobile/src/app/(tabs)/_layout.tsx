@@ -5,12 +5,13 @@ import { palette } from "@/design-system"
 /**
  * Native UITabBarController: Liquid Glass on iOS 26, system material before.
  * Colours use DynamicColorIOS because the native bar does not re-render on
- * JS theme changes.
+ * JS theme changes. The bar never minimizes: on short screens a small bounce
+ * collapsed it and the next tap landed on the mini bar instead of content.
  */
 export default function TabsLayout() {
   const tint = DynamicColorIOS({ light: palette.ink900, dark: palette.ink50 })
   return (
-    <NativeTabs minimizeBehavior="onScrollDown" tintColor={tint} labelStyle={{ color: tint }}>
+    <NativeTabs minimizeBehavior="never" tintColor={tint} labelStyle={{ color: tint }}>
       <NativeTabs.Trigger name="index">
         <NativeTabs.Trigger.Icon sf={{ default: "house", selected: "house.fill" }} />
         <NativeTabs.Trigger.Label>Heute</NativeTabs.Trigger.Label>

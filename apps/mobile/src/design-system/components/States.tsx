@@ -11,7 +11,7 @@ export function EmptyState({ icon = "tray", title, body, actionTitle, onAction }
   return (
     <View style={[styles.center, { padding: space[7], gap: space[3] }]}>
       <View style={[styles.iconWrap, { backgroundColor: colors.surfaceMuted }]}>
-        <SymbolView name={icon} size={28} tintColor={colors.textSecondary} />
+        <SymbolView name={icon} size={28} tintColor={colors.textSecondary} accessibilityElementsHidden importantForAccessibility="no" />
       </View>
       <Text variant="title3" align="center">
         {title}
@@ -31,7 +31,7 @@ export function ErrorState({ title = "Da ist etwas schiefgelaufen", body, onRetr
   return (
     <View style={[styles.center, { padding: space[7], gap: space[3] }]}>
       <View style={[styles.iconWrap, { backgroundColor: colors.dangerSoft }]}>
-        <SymbolView name="exclamationmark.triangle" size={28} tintColor={colors.danger} />
+        <SymbolView name="exclamationmark.triangle" size={28} tintColor={colors.danger} accessibilityElementsHidden importantForAccessibility="no" />
       </View>
       <Text variant="title3" align="center">
         {title}

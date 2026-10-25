@@ -1,4 +1,7 @@
-import { Alert, View } from "react-native"
+import { Alert, Pressable, View } from "react-native"
+import { SymbolView } from "expo-symbols"
+import { useQueryClient } from "@tanstack/react-query"
+import { queryKeys } from "@/lib/query-client"
 import { Stack, useLocalSearchParams, useRouter } from "expo-router"
 import { EQUIPMENT_LABELS, MUSCLE_GROUPS } from "@pondus/shared"
 import { Button, Card, Chip, ErrorState, LineChart, ListRow, LoadingState, Screen, Section, Text, useTheme } from "@/design-system"
@@ -8,10 +11,12 @@ import { ExerciseAnimation } from "@/components/ExerciseMedia"
 import { useSettingsStore } from "@/services/settings-store"
 import { CATEGORY_LABELS, DIFFICULTY_LABELS, formatDate, formatWeight } from "@/lib/format"
 import { gramsToUnit } from "@pondus/shared"
+import { errorMessage } from "@/lib/errors"
 
 export default function ExerciseDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>()
-  const { space } = useTheme()
+  const { space, colors } = useTheme()
+  const qc = useQueryClient()
   const router = useRouter()
   const unit = useSettingsStore(s => s.weightUnit)
   const q = useExercise(id)
@@ -20,6 +25,12 @@ export default function ExerciseDetailScreen() {
   const progress = useExerciseProgress(id, "12w")
   const fav = useToggleFavorite()
   const del = useDeleteExercise()
+  /** Back to the library (the detail may have been opened via replace from "new"), and drop the deleted exercise from the cache. */
+  const onDeleted = (exerciseId: string) => {
+    router.dismissTo("/(tabs)/exercises")
+    // Drop the deleted exercise from the cache once the detail is gone (also history/alternatives).
+    setTimeout(() => qc.removeQueries({ queryKey: queryKeys.exercise(exerciseId) }), 600)
+  }
   if (q.isLoading) return <LoadingState />
   if (q.isError || !q.data) return <ErrorState onRetry={() => void q.refetch()} />
   const e = q.data
@@ -32,7 +43,11 @@ export default function ExerciseDetailScreen() {
         options={{
           title: e.nameDe,
           headerLargeTitle: false,
-          headerRight: () => <Button title={e.isFavorite ? "♥" : "♡"} variant="ghost" size="sm" onPress={() => fav.mutate({ id: e.id, favorite: !e.isFavorite })} />,
+          headerRight: () => (
+            <Pressable accessibilityRole="button" accessibilityLabel={e.isFavorite ? "Aus Favoriten entfernen" : "Zu Favoriten hinzufügen"} accessibilityState={{ selected: e.isFavorite }} onPress={() => fav.mutate({ id: e.id, favorite: !e.isFavorite })} style={{ width: 44, height: 44, alignItems: "center", justifyContent: "center" }}>
+              <SymbolView name={e.isFavorite ? "heart.fill" : "heart"} size={22} tintColor={colors.accent} accessibilityElementsHidden importantForAccessibility="no" />
+            </Pressable>
+          ),
         }}
       />
       <Screen>
@@ -43,17 +58,20 @@ export default function ExerciseDetailScreen() {
           {e.isUnilateral ? <Chip label="Einseitig" size="sm" /> : null}
           {!e.isSystem ? <Chip label="Eigene Übung" size="sm" /> : null}
         </View>
-        <Card>
-          <Text variant="callout" color="secondary">
-            {e.nameEn !== e.nameDe ? `${e.nameEn} · ` : ""}
-            {e.aliases.length ? `auch: ${e.aliases.join(", ")}` : ""}
-          </Text>
-          {e.description ? (
-            <Text variant="body" style={{ marginTop: space[2] }}>
-              {e.description}
-            </Text>
-          ) : null}
-        </Card>
+        {(e.nameEn && e.nameEn !== e.nameDe) || e.aliases.length || e.description ? (
+          <Card>
+            {(e.nameEn && e.nameEn !== e.nameDe) || e.aliases.length ? (
+              <Text variant="callout" color="secondary">
+                {[e.nameEn && e.nameEn !== e.nameDe ? e.nameEn : null, e.aliases.length ? `auch: ${e.aliases.join(", ")}` : null].filter(Boolean).join(" · ")}
+              </Text>
+            ) : null}
+            {e.description ? (
+              <Text variant="body" style={(e.nameEn && e.nameEn !== e.nameDe) || e.aliases.length ? { marginTop: space[2] } : undefined}>
+                {e.description}
+              </Text>
+            ) : null}
+          </Card>
+        ) : null}
         <Card padding="none">
           <ListRow title="Hauptmuskeln" value={e.primaryMuscles.map(muscle).join(", ")} />
           <ListRow title="Nebenmuskeln" value={e.secondaryMuscles.length ? e.secondaryMuscles.map(muscle).join(", ") : "–"} />
@@ -121,7 +139,7 @@ export default function ExerciseDetailScreen() {
           )}
         </Section>
         {!e.isSystem ? (
-          <Button title="Übung löschen" variant="danger" onPress={() => Alert.alert("Übung löschen?", "Vergangene Workouts behalten ihre Daten.", [{ text: "Abbrechen", style: "cancel" }, { text: "Löschen", style: "destructive", onPress: () => del.mutate(e.id, { onSuccess: () => router.back(), onError: err => Alert.alert("Nicht möglich", err instanceof Error ? err.message : "") }) }])} />
+          <Button title="Übung löschen" variant="danger" onPress={() => Alert.alert("Übung löschen?", "Vergangene Workouts behalten ihre Daten.", [{ text: "Abbrechen", style: "cancel" }, { text: "Löschen", style: "destructive", onPress: () => del.mutate(e.id, { onSuccess: () => onDeleted(e.id), onError: err => Alert.alert("Nicht möglich", errorMessage(err)) }) }])} />
         ) : null}
       </Screen>
     </>

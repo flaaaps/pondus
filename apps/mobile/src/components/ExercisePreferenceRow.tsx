@@ -23,13 +23,13 @@ export function ExercisePreferenceRow({ exercise, value, onChange, last }: { exe
           {exercise.equipment.map(e => EQUIPMENT_LABELS[e].de).join(" · ")}
         </Text>
       </View>
-      <Pressable accessibilityRole="button" accessibilityLabel="Ausschließen" accessibilityState={{ selected: value === "excluded" }} onPress={() => set("excluded")} hitSlop={8} style={[styles.btn, { borderRadius: radius.pill, backgroundColor: value === "excluded" ? colors.dangerSoft : colors.surfaceMuted }]}>
+      <Pressable accessibilityRole="button" accessibilityLabel={`${exercise.nameDe} ausschließen`} accessibilityState={{ selected: value === "excluded" }} onPress={() => set("excluded")} hitSlop={4} style={[styles.btn, { borderRadius: radius.pill, backgroundColor: value === "excluded" ? colors.dangerSoft : colors.surfaceMuted }]}>
         <SymbolView name="hand.raised" size={16} tintColor={value === "excluded" ? colors.danger : colors.textTertiary} />
       </Pressable>
-      <Pressable accessibilityRole="button" accessibilityLabel="Bevorzugen" accessibilityState={{ selected: value === "preferred" }} onPress={() => set("preferred")} hitSlop={8} style={[styles.btn, { borderRadius: radius.pill, backgroundColor: value === "preferred" ? colors.accentSoft : colors.surfaceMuted }]}>
+      <Pressable accessibilityRole="button" accessibilityLabel={`${exercise.nameDe} bevorzugen`} accessibilityState={{ selected: value === "preferred" }} onPress={() => set("preferred")} hitSlop={4} style={[styles.btn, { borderRadius: radius.pill, backgroundColor: value === "preferred" ? colors.accentSoft : colors.surfaceMuted }]}>
         <SymbolView name={value === "preferred" ? "heart.fill" : "heart"} size={16} tintColor={value === "preferred" ? colors.accent : colors.textTertiary} />
       </Pressable>
     </View>
   )
 }
-const styles = StyleSheet.create({ row: { flexDirection: "row", alignItems: "center", gap: 10 }, btn: { width: 36, height: 36, alignItems: "center", justifyContent: "center" } })
+const styles = StyleSheet.create({ row: { flexDirection: "row", alignItems: "center", gap: 10 }, btn: { width: 44, height: 44, alignItems: "center", justifyContent: "center" } })

@@ -5,6 +5,7 @@ import { EXPERIENCE_LEVELS, GOALS, type ExperienceLevel, type Goal } from "@pond
 import { Button, Chip, ErrorState, LoadingState, Screen, Section, Text, useTheme } from "@/design-system"
 import { useProfile, useUpdateProfile } from "@/features/profile/queries"
 import { EXPERIENCE_LABELS, GOAL_LABELS, WEEKDAYS_SHORT } from "@/lib/format"
+import { errorMessage } from "@/lib/errors"
 
 export default function EditProfileScreen() {
   const { space } = useTheme()
@@ -13,7 +14,7 @@ export default function EditProfileScreen() {
   const update = useUpdateProfile()
   if (profile.isLoading) return <LoadingState />
   if (!profile.data) return <ErrorState onRetry={() => void profile.refetch()} />
-  return <Form initial={profile.data} onSave={body => update.mutate(body, { onSuccess: () => router.back(), onError: e => Alert.alert("Speichern fehlgeschlagen", e instanceof Error ? e.message : "") })} saving={update.isPending} />
+  return <Form initial={profile.data} onSave={body => update.mutate(body, { onSuccess: () => router.back(), onError: e => Alert.alert("Speichern fehlgeschlagen", errorMessage(e)) })} saving={update.isPending} />
 
   function Form({ initial, onSave, saving }: { initial: NonNullable<typeof profile.data>; onSave: (b: { primaryGoal: Goal; secondaryGoals: Goal[]; experienceLevel: ExperienceLevel; weeklyFrequency: number; sessionDurationMinutes: number; preferredWeekdays: number[] }) => void; saving: boolean }) {
     const [goals, setGoals] = useState<Goal[]>([initial.primaryGoal, ...initial.secondaryGoals])

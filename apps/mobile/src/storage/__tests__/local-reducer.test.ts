@@ -1,5 +1,5 @@
 import type { WorkoutDto } from "@pondus/shared"
-import { applyLocalMutation, elapsedSeconds } from "../local-reducer"
+import { applyLocalMutation, elapsedSeconds, mergeLocalDrafts } from "../local-reducer"
 
 const base: WorkoutDto = {
   id: "w1",
@@ -99,5 +99,31 @@ describe("applyLocalMutation", () => {
   it("elapsed excludes an ongoing pause", () => {
     const paused: WorkoutDto = { ...base, status: "paused", pausedAt: "2026-10-25T10:30:00.000Z", pausedSeconds: 60 }
     expect(elapsedSeconds(paused, new Date("2026-10-25T10:45:00.000Z").getTime())).toBe(45 * 60 - 60 - 15 * 60)
+  })
+})
+
+describe("mergeLocalDrafts", () => {
+  const withSets = (sets: WorkoutDto["exercises"][number]["sets"]): WorkoutDto => ({ ...base, exercises: [{ ...base.exercises[0]!, sets }] })
+  const [s1, s2] = base.exercises[0]!.sets as [WorkoutDto["exercises"][number]["sets"][number], WorkoutDto["exercises"][number]["sets"][number]]
+
+  it("keeps values typed into open sets when the server copy is adopted", () => {
+    const local = withSets([{ ...s1, completed: true, completedAt: "x" }, { ...s2, weightGrams: 80000, reps: 7 }])
+    const server = withSets([{ ...s1, completed: true, completedAt: "x" }, { ...s2 }])
+    const merged = mergeLocalDrafts(server, local)
+    expect(merged.exercises[0]!.sets[1]).toMatchObject({ weightGrams: 80000, reps: 7, completed: false })
+  })
+  it("never overrides sets the server has completed", () => {
+    const local = withSets([{ ...s1, weightGrams: 1000 }, s2])
+    const server = withSets([{ ...s1, completed: true, completedAt: "x", weightGrams: 70000 }, s2])
+    expect(mergeLocalDrafts(server, local).exercises[0]!.sets[0]!.weightGrams).toBe(70000)
+  })
+  it("keeps local-only placeholder sets", () => {
+    const local = withSets([s1, s2, { ...s2, id: "s3", clientId: "s3", setNumber: 3, weightGrams: 90000 }])
+    const merged = mergeLocalDrafts(withSets([s1, s2]), local)
+    expect(merged.exercises[0]!.sets.map(s => [s.setNumber, s.weightGrams])).toEqual([
+      [1, 60000],
+      [2, 60000],
+      [3, 90000],
+    ])
   })
 })

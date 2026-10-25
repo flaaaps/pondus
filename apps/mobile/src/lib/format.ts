@@ -1,4 +1,4 @@
-import { formatWeight, gramsToUnit, type WeightUnit } from "@pondus/shared"
+import { SPLIT_LABELS as SHARED_SPLIT_LABELS, formatWeight, gramsToUnit, type WeightUnit } from "@pondus/shared"
 
 export { formatWeight }
 
@@ -61,7 +61,8 @@ export const GOAL_LABELS: Record<string, string> = {
 }
 export const EXPERIENCE_LABELS: Record<string, string> = { beginner: "Anfänger", intermediate: "Fortgeschritten", advanced: "Erfahren" }
 export const ENVIRONMENT_LABELS: Record<string, string> = { full_gym: "Voll ausgestattetes Studio", limited_gym: "Kleines Studio", home: "Zu Hause", custom: "Eigene Auswahl" }
-export const SPLIT_LABELS: Record<string, string> = { full_body: "Ganzkörper", upper_lower: "Ober-/Unterkörper", push_pull_legs: "Push/Pull/Legs", custom: "Individuell" }
+/** Split labels live in @pondus/shared (also used for plan names and adjustment diffs). */
+export const SPLIT_LABELS: Record<string, string> = SHARED_SPLIT_LABELS
 export const CATEGORY_LABELS: Record<string, string> = { compound: "Grundübung", isolation: "Isolation", core: "Rumpf", cardio: "Cardio", mobility: "Mobilität", warmup: "Aufwärmen" }
 export const DIFFICULTY_LABELS: Record<string, string> = { beginner: "Einsteiger", intermediate: "Fortgeschritten", advanced: "Anspruchsvoll" }
 export const SET_TYPE_LABELS: Record<string, string> = { warmup: "Aufwärmen", working: "Arbeitssatz", drop: "Dropset", superset: "Supersatz", failure: "Bis Versagen", backoff: "Back-off" }

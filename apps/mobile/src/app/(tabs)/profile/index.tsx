@@ -1,7 +1,7 @@
-import { Alert, Share, View } from "react-native"
+import { Alert, Share, Switch, View } from "react-native"
 import { useRouter } from "expo-router"
 import { MUSCLE_GROUPS } from "@pondus/shared"
-import { Card, ErrorState, ListRow, LoadingState, Screen, Section, SegmentedControl, Text, useTheme } from "@/design-system"
+import { Button, Card, ErrorState, NumberField, ListRow, LoadingState, Screen, Section, SegmentedControl, Text, useTheme } from "@/design-system"
 import { useDeleteAccount, useExercisePreferences, useExportData, useProfile, useUpdateUser } from "@/features/profile/queries"
 import { useSessionStore, useUser } from "@/services/session-store"
 import { useSettingsStore } from "@/services/settings-store"
@@ -9,7 +9,7 @@ import { useActiveWorkoutStore } from "@/features/workout/active-workout-store"
 import { ENVIRONMENT_LABELS, EXPERIENCE_LABELS, GOAL_LABELS, WEEKDAYS_SHORT } from "@/lib/format"
 
 export default function ProfileScreen() {
-  const { space } = useTheme()
+  const { space, colors } = useTheme()
   const router = useRouter()
   const user = useUser()
   const profile = useProfile()
@@ -23,7 +23,13 @@ export default function ProfileScreen() {
   const sync = useActiveWorkoutStore(s => s.sync)
 
   if (profile.isLoading && !profile.data) return <LoadingState />
-  if (profile.isError && !profile.data) return <ErrorState onRetry={() => void profile.refetch()} />
+  if (profile.isError && !profile.data)
+    return (
+      <Screen>
+        <ErrorState body="Dein Profil konnte nicht geladen werden." onRetry={() => void profile.refetch()} />
+        <Button title="Abmelden" variant="ghost" onPress={() => void signOut()} style={{ alignSelf: "center" }} />
+      </Screen>
+    )
   const p = profile.data!
 
   const onExport = () =>
@@ -84,9 +90,18 @@ export default function ProfileScreen() {
 
       <Section title="Pausentimer">
         <Card padding="none">
-          <ListRow title="Benachrichtigung bei Ablauf" trailing={<Text variant="callout" color="accent" onPress={() => settings.setRestTimerNotifications(!settings.restTimerNotifications)}>{settings.restTimerNotifications ? "An" : "Aus"}</Text>} />
-          <ListRow title="Haptisches Feedback" trailing={<Text variant="callout" color="accent" onPress={() => settings.setRestTimerHaptics(!settings.restTimerHaptics)}>{settings.restTimerHaptics ? "An" : "Aus"}</Text>} />
-          <ListRow title="Standardpause (freies Training)" value={`${settings.defaultRestSeconds} s`} onPress={() => settings.setDefaultRestSeconds(settings.defaultRestSeconds >= 180 ? 60 : settings.defaultRestSeconds + 30)} chevron={false} last />
+          <ListRow title="Benachrichtigung bei Ablauf" trailing={<Switch accessibilityLabel="Benachrichtigung bei Ablauf" value={settings.restTimerNotifications} onValueChange={settings.setRestTimerNotifications} trackColor={{ true: colors.accent }} />} />
+          <ListRow title="Haptisches Feedback" trailing={<Switch accessibilityLabel="Haptisches Feedback" value={settings.restTimerHaptics} onValueChange={settings.setRestTimerHaptics} trackColor={{ true: colors.accent }} />} />
+          <ListRow
+            title="Standardpause"
+            subtitle="Für freies Training und neue Übungen"
+            trailing={
+              <View style={{ width: 150 }}>
+                <NumberField value={settings.defaultRestSeconds} onChange={v => settings.setDefaultRestSeconds(v ?? 120)} step={15} min={30} max={300} suffix="s" compact accessibilityLabel="Standardpause in Sekunden" />
+              </View>
+            }
+            last
+          />
         </Card>
       </Section>
 

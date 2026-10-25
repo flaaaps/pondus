@@ -4,8 +4,8 @@ import { useRouter } from "expo-router"
 import type { PlanSessionDto, WorkoutDto } from "@pondus/shared"
 import { useActiveWorkoutStore } from "./active-workout-store"
 import { useApi } from "@/services/session-store"
-import { ApiError } from "@/lib/api-client"
 import { haptic } from "@/lib/haptics"
+import { errorMessage } from "@/lib/errors"
 
 export function useStartWorkout() {
   const api = useApi()
@@ -27,7 +27,7 @@ export function useStartWorkout() {
       haptic("medium")
       router.push(`/workout/${w.id}`)
     } catch (err) {
-      Alert.alert("Start nicht möglich", err instanceof ApiError ? err.message : "Unbekannter Fehler")
+      Alert.alert("Start nicht möglich", errorMessage(err, "Unbekannter Fehler"))
     } finally {
       setStarting(false)
     }

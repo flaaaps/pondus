@@ -13,9 +13,12 @@ export function usePlans() {
   return useQuery({ queryKey: queryKeys.plans, queryFn: () => api.get<{ id: string; name: string; status: string; splitType: string; weeklyFrequency: number; versionNumber: number; updatedAt: string }[]>("/api/v1/plans") })
 }
 
+/** Device time zone: the server computes "today" and week boundaries in it (default Europe/Berlin otherwise). */
+export const deviceTimeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone
+
 export function useWeek(date?: string) {
   const api = useApi()
-  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone
+  const tz = deviceTimeZone()
   return useQuery({
     queryKey: queryKeys.week(date),
     queryFn: () => api.get<PlanWeekDto>(`/api/v1/plans/week?timeZone=${encodeURIComponent(tz)}${date ? `&date=${date}` : ""}`),
@@ -98,7 +101,7 @@ export function useOverrideSession() {
   const api = useApi()
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ sessionId, ...body }: { sessionId: string; weekStart: string; action: "move" | "skip" | "reset"; date?: string }) => api.post<PlanWeekDto>(`/api/v1/plans/sessions/${sessionId}/override`, body),
+    mutationFn: ({ sessionId, ...body }: { sessionId: string; weekStart: string; action: "move" | "skip" | "reset"; date?: string }) => api.post<PlanWeekDto>(`/api/v1/plans/sessions/${sessionId}/override?timeZone=${encodeURIComponent(deviceTimeZone())}`, body),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["plans", "week"] }),
   })
 }

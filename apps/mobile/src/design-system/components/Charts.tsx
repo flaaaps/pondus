@@ -4,6 +4,17 @@ import Svg, { Circle, Line, Path, Rect, Text as SvgText } from "react-native-svg
 import { useTheme } from "../theme"
 import { Text } from "./Text"
 
+/**
+ * SVG text is not clipped by layout, but by the canvas: labels near an edge are
+ * anchored to that edge instead of centered, so "19.10." or "255 kg" stay whole.
+ */
+function edgeSafe(x: number, text: string, width: number, fontSize: number): { x: number; textAnchor: "start" | "middle" | "end" } {
+  const half = (text.length * fontSize * 0.58) / 2
+  if (x - half < 0) return { x: 0, textAnchor: "start" }
+  if (x + half > width) return { x: width, textAnchor: "end" }
+  return { x, textAnchor: "middle" }
+}
+
 export interface ChartPoint {
   label: string
   value: number
@@ -54,13 +65,13 @@ export function BarChart({ data, height = 140, formatValue = v => String(v), emp
           })}
           {data.map((d, i) =>
             data.length <= 8 || i % Math.ceil(data.length / 6) === 0 ? (
-              <SvgText key={`l${i}`} x={i * (barW + gap) + barW / 2} y={height - 6} fontSize={typography.caption.fontSize} fill={colors.textTertiary} textAnchor="middle">
+              <SvgText key={`l${i}`} {...edgeSafe(i * (barW + gap) + barW / 2, d.label, width, typography.caption.fontSize)} y={height - 6} fontSize={typography.caption.fontSize} fill={colors.textTertiary}>
                 {d.label}
               </SvgText>
             ) : null,
           )}
           {(sel ?? data.find(d => d.value === max)) ? (
-            <SvgText x={(selected ?? data.findIndex(d => d.value === max)) * (barW + gap) + barW / 2} y={padTop - 6} fontSize={typography.caption.fontSize} fontWeight="600" fill={colors.textPrimary} textAnchor="middle">
+            <SvgText {...edgeSafe((selected ?? data.findIndex(d => d.value === max)) * (barW + gap) + barW / 2, formatValue((sel ?? data.find(d => d.value === max))!.value), width, typography.caption.fontSize)} y={padTop - 6} fontSize={typography.caption.fontSize} fontWeight="600" fill={colors.textPrimary}>
               {formatValue((sel ?? data.find(d => d.value === max))!.value)}
             </SvgText>
           ) : null}
@@ -107,11 +118,10 @@ export function LineChart({ data, height = 160, formatValue = v => String(v), em
           ))}
           {sel ? (
             <>
-              <SvgText x={Math.min(width - 40, Math.max(40, xFor(selIdx)))} y={14} fontSize={typography.caption.fontSize} fontWeight="600" fill={colors.textPrimary} textAnchor="middle">
-                {formatValue(sel.value)}
-                {sel.caption ? ` · ${sel.caption}` : ""}
+              <SvgText {...edgeSafe(xFor(selIdx), `${formatValue(sel.value)}${sel.caption ? ` · ${sel.caption}` : ""}`, width, typography.caption.fontSize)} y={14} fontSize={typography.caption.fontSize} fontWeight="600" fill={colors.textPrimary}>
+                {`${formatValue(sel.value)}${sel.caption ? ` · ${sel.caption}` : ""}`}
               </SvgText>
-              <SvgText x={Math.min(width - 30, Math.max(30, xFor(selIdx)))} y={height - 6} fontSize={typography.caption.fontSize} fill={colors.textTertiary} textAnchor="middle">
+              <SvgText {...edgeSafe(xFor(selIdx), sel.label, width, typography.caption.fontSize)} y={height - 6} fontSize={typography.caption.fontSize} fill={colors.textTertiary}>
                 {sel.label}
               </SvgText>
             </>

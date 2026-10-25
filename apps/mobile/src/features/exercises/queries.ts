@@ -128,7 +128,8 @@ export function useDeleteExercise() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (id: string) => api.delete(`/api/v1/exercises/${id}`),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ["exercises"] }),
+    // Refresh lists, but never refetch the deleted exercise's own queries (they would 404 while the detail closes).
+    onSuccess: (_, id) => void qc.invalidateQueries({ queryKey: ["exercises"], predicate: q => q.queryKey[1] !== id }),
   })
 }
 
