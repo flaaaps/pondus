@@ -3,7 +3,9 @@ import { ActionSheetIOS, Alert, Pressable, View } from "react-native"
 import { SymbolView } from "expo-symbols"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { Stack, useLocalSearchParams, useRouter } from "expo-router"
-import type { PlanEditOp, PlanExerciseDto } from "@pondus/shared"
+import type { PlanDto, PlanEditOp, PlanExerciseDto } from "@pondus/shared"
+import { useQueryClient } from "@tanstack/react-query"
+import { queryKeys } from "@/lib/query-client"
 import { MUSCLE_GROUPS } from "@pondus/shared"
 import { Button, Card, ErrorState, ListRow, LoadingState, NumberField, Screen, Section, Text, useTheme } from "@/design-system"
 import { useEditPlan, useSession } from "@/features/plans/queries"
@@ -30,7 +32,20 @@ export default function SessionScreen() {
   const slugById = useMemo(() => new Map((library.data ?? []).filter(e => e.isSystem).map(e => [e.id, e.slug])), [library.data])
   const [editing, setEditing] = useState<string | null>(null)
 
-  const apply = (ops: PlanEditOp[]) => edit.mutate(ops, { onSuccess: () => void q.refetch(), onError: e => Alert.alert("Änderung fehlgeschlagen", e instanceof ApiError ? e.message : "Unbekannter Fehler") })
+  const qc = useQueryClient()
+  /**
+   * Every edit creates a new plan version with new session ids. Pick the
+   * matching session from the response (same sequence) and switch the route
+   * to it, so the screen shows the change immediately.
+   */
+  const onEdited = (plan: PlanDto) => {
+    const current = q.data?.session
+    const next = plan.currentVersion.sessions.find(s => s.sequence === current?.sequence) ?? plan.currentVersion.sessions.find(s => s.name === current?.name)
+    if (!next) return void q.refetch()
+    qc.setQueryData(queryKeys.session(next.id), { planId: plan.id, planName: plan.name, versionNumber: plan.currentVersion.versionNumber, session: next })
+    if (next.id !== id) router.setParams({ id: next.id })
+  }
+  const apply = (ops: PlanEditOp[]) => edit.mutate(ops, { onSuccess: onEdited, onError: e => Alert.alert("Änderung fehlgeschlagen", e instanceof ApiError ? e.message : "Unbekannter Fehler") })
 
   if (q.isLoading) return <LoadingState />
   if (q.isError || !q.data) return <ErrorState onRetry={() => void q.refetch()} />
