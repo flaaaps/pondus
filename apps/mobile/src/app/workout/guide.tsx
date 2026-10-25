@@ -58,10 +58,10 @@ export default function WorkoutGuideScreen() {
             <Text variant="calloutStrong">Arbeitssatz.</Text> Die Sätze, die zählen. Daraus berechnet Pondus deine Ziele fürs nächste Mal.
           </Row>
           <Row label="D">
-            <Text variant="calloutStrong">Dropsatz</Text> – direkt im Anschluss mit weniger Gewicht weiter.
+            <Text variant="calloutStrong">Dropsatz</Text> – direkt im Anschluss mit weniger Gewicht weiter. Zählt als halber Satz fürs Wochenvolumen und nicht für die Steigerung.
           </Row>
           <Row label="F">
-            <Text variant="calloutStrong">Satz bis zum Muskelversagen.</Text>
+            <Text variant="calloutStrong">Satz bis zum Muskelversagen.</Text> Zählt wie ein Arbeitssatz, immer mit RIR 0 – auch wenn er oben im Bereich liegt, steigert Pondus das Gewicht erst, wenn du es mit Reserve schaffst.
           </Row>
           <P>Tippe auf die Satznummer, um den Satztyp zu ändern. Gedrückt halten öffnet Optionen wie RIR oder Löschen.</P>
         </Card>
@@ -90,7 +90,7 @@ export default function WorkoutGuideScreen() {
 
       <Section id="progression" title="Wie Pondus deine Ziele berechnet">
         <Card style={{ gap: space[3] }}>
-          <P>Jede Übung hat einen Wiederholungsbereich, z. B. 3 × 8–12. Pondus steigert in zwei Schritten: erst die Wiederholungen, dann das Gewicht. Grundlage ist dein schwerster Arbeitssatz vom letzten Mal; Aufwärmsätze zählen nicht.</P>
+          <P>Jede Übung hat einen Wiederholungsbereich, z. B. 3 × 8–12. Pondus steigert in zwei Schritten: erst die Wiederholungen, dann das Gewicht. Grundlage sind deine schwersten Arbeitssätze vom letzten Mal (auch F-Sätze); Aufwärm- und Dropsätze zählen nicht.</P>
           <Row label="↑">
             <Text variant="calloutStrong">Mehr Wiederholungen.</Text> Du warst im Bereich, aber noch nicht oben (z. B. 10/9/9): gleiches Gewicht, pro Satz eine Wiederholung mehr.
           </Row>

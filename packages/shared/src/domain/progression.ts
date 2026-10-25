@@ -65,6 +65,11 @@ export interface ProgressionOptions {
   loadType?: LoadType
 }
 
+/** RIR as the progression sees it: a set taken to failure has no reps in reserve, whatever was logged. */
+function effectiveRir(s: PerformedSet): number | null {
+  return s.setType === "failure" ? 0 : s.rir
+}
+
 /** Top working sets: heaviest load, or for assisted exercises the *least* assistance. */
 function topWorkingSets(sets: PerformedSet[], assisted = false) {
   const working = sets.filter(s => s.completed && COUNTS_AS_WORKING[s.setType] && s.setType !== "drop" && s.setType !== "backoff")
@@ -118,7 +123,7 @@ export function recommendProgression(
   }
   const reps = sets.map(s => s.reps ?? 0)
   const minReps = Math.min(...reps)
-  const rirOk = sets.every(s => s.rir === null || target.targetRir === null || s.rir >= target.targetRir)
+  const rirOk = sets.every(s => { const rir = effectiveRir(s); return rir === null || target.targetRir === null || rir >= target.targetRir })
   const enoughSets = sets.length >= Math.max(1, Math.min(target.targetSets, 2))
 
   if (minReps >= target.repsMax && rirOk && enoughSets) {
@@ -271,7 +276,7 @@ export function nextTargets(
     case "hold":
       return { ...base, kind: "hold", weightGrams: rec.suggestedWeightGrams, repsPerSet: fill(i => Math.max(repsMin, lastReps[i] ?? repsMin)) }
     case "add_reps": {
-      const rirOk = top.sets.every(s => s.rir === null || targetRir === null || s.rir >= targetRir)
+      const rirOk = top.sets.every(s => { const rir = effectiveRir(s); return rir === null || targetRir === null || rir >= targetRir })
       if (!rirOk) {
         return { ...base, kind: "hold", weightGrams: rec.suggestedWeightGrams, repsPerSet: fill(i => Math.min(repsMax, Math.max(repsMin, lastReps[i] ?? repsMin))) }
       }

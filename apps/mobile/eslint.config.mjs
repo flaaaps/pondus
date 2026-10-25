@@ -12,6 +12,8 @@ export default tseslint.config(
       "@typescript-eslint/no-explicit-any": "error",
       "@typescript-eslint/consistent-type-imports": "error",
       "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
+      // Non-breaking spaces in UI copy keep "z. B." or "2,5 kg" on one line.
+      "no-irregular-whitespace": ["error", { skipJSXText: true }],
     },
   },
 )

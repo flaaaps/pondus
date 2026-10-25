@@ -29,6 +29,21 @@ describe("nextTargets", () => {
     const t = nextTargets(presc, [at("2026-10-20T10:00:00Z", [w(60000, 10, 0), w(60000, 9, 0), w(60000, 9, 0)])])
     expect(t).toMatchObject({ kind: "hold", weightGrams: 60000, repsPerSet: [10, 9, 9] })
   })
+  it("set to failure counts as RIR 0: top of range does not add load", () => {
+    const f = (weightGrams: number, reps: number, rir: number | null = null): PerformedSet => ({ setType: "failure", weightGrams, reps, rir, completed: true })
+    const t = nextTargets(presc, [at("2026-10-20T10:00:00Z", [w(60000, 12), w(60000, 12), f(60000, 12, 3)])])
+    expect(t).toMatchObject({ kind: "hold", weightGrams: 60000 })
+  })
+  it("set to failure is ignored for RIR when no RIR target is set", () => {
+    const f: PerformedSet = { setType: "failure", weightGrams: 60000, reps: 12, rir: null, completed: true }
+    const t = nextTargets({ ...presc, targetRir: null }, [at("2026-10-20T10:00:00Z", [w(60000, 12), w(60000, 12), f])])
+    expect(t.kind).toBe("increase_load")
+  })
+  it("drop sets don't drive progression", () => {
+    const d: PerformedSet = { setType: "drop", weightGrams: 40000, reps: 6, rir: 0, completed: true }
+    const t = nextTargets(presc, [at("2026-10-20T10:00:00Z", [w(60000, 12), w(60000, 12), w(60000, 12), d])])
+    expect(t).toMatchObject({ kind: "increase_load", weightGrams: 62500 })
+  })
   it("under range once → hold at repsMin", () => {
     const t = nextTargets(presc, [at("2026-10-20T10:00:00Z", [w(80000, 7), w(80000, 6)])])
     expect(t).toMatchObject({ kind: "hold", weightGrams: 80000, repsPerSet: [8, 8, 8] })
@@ -98,5 +113,12 @@ describe("assisted with unlogged sets (regression)", () => {
   it("0 kg logged assistance stays a real value", () => {
     const t = nextTargets({ repsMin: 6, repsMax: 10, targetRir: 2, targetSets: 2, incrementGrams: 2500 }, [at("2026-10-25T11:49:39Z", [set(0, 7), set(5000, 8)])], { loadType: "assisted" })
     expect(t.weightGrams).toBe(0)
+  })
+})
+
+describe("SET_VOLUME_CREDIT", () => {
+  it("drop sets count half, warm-ups nothing", async () => {
+    const { SET_VOLUME_CREDIT } = await import("../src")
+    expect(SET_VOLUME_CREDIT).toMatchObject({ warmup: 0, working: 1, drop: 0.5, failure: 1 })
   })
 })

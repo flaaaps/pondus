@@ -36,6 +36,20 @@ export const COUNTS_AS_WORKING: Record<SetType, boolean> = {
   backoff: true,
 }
 
+/**
+ * How much a completed set counts toward weekly sets per muscle. A drop set is a
+ * short extension of the set before it, not a full extra set, so it counts half.
+ * Tonnage, records and the plain set count are unaffected.
+ */
+export const SET_VOLUME_CREDIT: Record<SetType, number> = {
+  warmup: 0,
+  working: 1,
+  drop: 0.5,
+  superset: 1,
+  failure: 1,
+  backoff: 1,
+}
+
 export interface LoggedSet {
   setType: SetType
   weightGrams: number | null

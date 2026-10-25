@@ -4,7 +4,7 @@ import { exerciseBests, exerciseMuscles, exercises, muscleGroups, personalRecord
 import { notFound } from "../../shared/errors.js"
 import { addDaysISO, resolveTimeZone, weekStartISO } from "../../shared/time.js"
 import { decodeCursor, encodeCursor } from "../../shared/pagination.js"
-import { estimateSetOneRepMaxGrams, incrementForExercise, recommendProgression, tonnageGrams, type ExerciseProgressDto, type LoadType, type PerformanceSnapshot, type ProgressOverviewDto } from "@pondus/shared"
+import { SET_VOLUME_CREDIT, estimateSetOneRepMaxGrams, incrementForExercise, recommendProgression, tonnageGrams, type ExerciseProgressDto, type LoadType, type PerformanceSnapshot, type ProgressOverviewDto } from "@pondus/shared"
 
 /** No body weight is stored yet, so assisted sets have no effective load (e1RM/tonnage null/0). */
 const BODYWEIGHT_GRAMS: number | null = null
@@ -67,8 +67,10 @@ export function createProgressService(db: Db) {
 
       const [plan] = await db.select({ v: trainingPlanVersions }).from(trainingPlans).innerJoin(trainingPlanVersions, and(eq(trainingPlanVersions.trainingPlanId, trainingPlans.id), eq(trainingPlanVersions.versionNumber, trainingPlans.currentVersionNumber))).where(and(eq(trainingPlans.userId, userId), eq(trainingPlans.status, "active")))
 
+      // Weekly sets per muscle use SET_VOLUME_CREDIT (shared): warm-ups 0, drop sets ½, everything else 1.
+      const setVolumeCreditSql = sql<number>`coalesce(sum(case when not ${workoutSets.completed} then 0 when ${workoutSets.setType} = 'warmup' then ${sql.raw(String(SET_VOLUME_CREDIT.warmup))} when ${workoutSets.setType} = 'drop' then ${sql.raw(String(SET_VOLUME_CREDIT.drop))} else 1 end), 0)::float`
       const muscleRows = await db
-        .select({ slug: muscleGroups.slug, role: exerciseMuscles.role, sets: sql<number>`count(*) filter (where ${workoutSets.completed} and ${workoutSets.setType} <> 'warmup')::int` })
+        .select({ slug: muscleGroups.slug, role: exerciseMuscles.role, sets: setVolumeCreditSql })
         .from(workoutSets)
         .innerJoin(workoutExercises, eq(workoutExercises.id, workoutSets.workoutExerciseId))
         .innerJoin(workouts, eq(workouts.id, workoutExercises.workoutId))
@@ -81,7 +83,7 @@ export function createProgressService(db: Db) {
 
       // This week's sets per muscle vs. the plan's weekly target (same weighting as the planner: secondary = 0.5).
       const weekMuscleRows = await db
-        .select({ slug: muscleGroups.slug, role: exerciseMuscles.role, sets: sql<number>`count(*) filter (where ${workoutSets.completed} and ${workoutSets.setType} <> 'warmup')::int` })
+        .select({ slug: muscleGroups.slug, role: exerciseMuscles.role, sets: setVolumeCreditSql })
         .from(workoutSets)
         .innerJoin(workoutExercises, eq(workoutExercises.id, workoutSets.workoutExerciseId))
         .innerJoin(workouts, eq(workouts.id, workoutExercises.workoutId))

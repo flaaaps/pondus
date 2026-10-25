@@ -175,7 +175,8 @@ export default function ActiveWorkoutScreen() {
       if (set.reps === null && source?.reps != null) patch.reps = source.reps
     }
     store.upsertSet(api, ex, { ...patch, clientId: set.clientId ?? set.id, setNumber: set.setNumber })
-    setRirSetId(completed && set.setType !== "warmup" ? set.id : null)
+    // Warm-ups need no RIR; a set to failure is RIR 0 by definition.
+    setRirSetId(completed && set.setType !== "warmup" && set.setType !== "failure" ? set.id : null)
     if (completed && set.setType !== "warmup") timer.start(ex.restSeconds ?? defaultRest, ex.exerciseNameSnapshot)
     const index = visible.indexOf(ex)
     if (completed && ex.sets.every(s => s.id === set.id || s.completed)) {

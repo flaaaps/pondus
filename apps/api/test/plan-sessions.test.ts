@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
-import { defaultPlanName, type PlanDto, type PlanWeekDto, type AdjustmentPreviewDto, type ProgressOverviewDto } from "@pondus/shared"
+import { defaultPlanName, type PlanDto, type PlanWeekDto, type AdjustmentPreviewDto, type ProgressOverviewDto, type WorkoutDto } from "@pondus/shared"
 import { api, createTestApp, exerciseIdBySlug, registerUser, setupOnboardedUser } from "./helpers.js"
 import type { App } from "../src/app.js"
 import { normalizeSearch } from "../src/modules/exercises/service.js"
@@ -185,5 +185,27 @@ describe("progress overview", () => {
     expect(chest.targetSets).toBe(plan.currentVersion.weeklySets.chest)
     expect(chest.actualSets).toBe(0)
     expect(chest.label).toBe("Brust")
+  })
+
+  it("counts drop sets as half a set and warm-ups not at all", async () => {
+    const u = await setupOnboardedUser(app, { weeklyFrequency: 3 })
+    await api(app, u.token, "POST", "/plans/generate", {})
+    const bench = await exerciseIdBySlug(app, u.token, "barbell-bench-press")
+    const w = (await api(app, u.token, "POST", "/workouts", { clientId: randomUUID(), source: { type: "empty" } })).json as WorkoutDto
+    const withEx = (await api(app, u.token, "POST", `/workouts/${w.id}/exercises`, { clientId: randomUUID(), exerciseId: bench, targetSets: 1 })).json as WorkoutDto
+    const ex = withEx.exercises[0]!
+    const at = new Date().toISOString()
+    const sets = [
+      { setType: "warmup", weightGrams: 40000, reps: 8 },
+      { setType: "working", weightGrams: 60000, reps: 10 },
+      { setType: "drop", weightGrams: 40000, reps: 8 },
+    ]
+    for (const [i, s] of sets.entries()) {
+      const res = await api(app, u.token, "PUT", `/workouts/${w.id}/exercises/${ex.id}/sets`, { clientId: randomUUID(), setNumber: i + 1, ...s, completed: true, completedAt: at, updatedAt: at })
+      expect(res.status).toBe(200)
+    }
+    expect((await api(app, u.token, "POST", `/workouts/${w.id}/complete`, {})).status).toBe(200)
+    const res = (await api(app, u.token, "GET", "/progress/overview")).json as ProgressOverviewDto
+    expect(res.muscleWeeklySets!.find(m => m.muscle === "chest")!.actualSets).toBe(1.5)
   })
 })
