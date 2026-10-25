@@ -9,9 +9,8 @@ import {
   isAssisted,
   isWarmup,
   keyOf,
-  nextExerciseWithOpenSets,
-  nextOpenSet,
   numberFor,
+  upcomingSet,
   visibleExercises,
   warmupIndexFor,
   type LibraryLookup,
@@ -46,11 +45,16 @@ export interface WorkoutActivityProps {
   rest: { startMs: number; endMs: number } | null
   /** Rest stopped in the app: frozen remaining time ("1:24"). */
   restPausedText: string | null
+  /** "Satz ✓" ticks off the set shown (running workout with an open set). */
+  canComplete: boolean
+  /** Open RIR question of a just completed set; shown instead of the rest buttons while the rest runs. */
+  rirPrompt: { setKey: string } | null
 }
 
 export interface ActivityInput {
   workout: WorkoutDto
   focusedExerciseKey: string | null
+  rirPendingSetKey: string | null
   rest: RestTimerSnapshot
   unit: WeightUnit
   lookup: LibraryLookup
@@ -98,7 +102,7 @@ function restProps(rest: RestTimerSnapshot, now: number): Pick<WorkoutActivityPr
 }
 
 /** Props for a running or paused workout. */
-export function buildWorkoutActivityProps({ workout: w, focusedExerciseKey, rest, unit, lookup, now }: ActivityInput): WorkoutActivityProps {
+export function buildWorkoutActivityProps({ workout: w, focusedExerciseKey, rirPendingSetKey, rest, unit, lookup, now }: ActivityInput): WorkoutActivityProps {
   const elapsed = elapsedSeconds(w, now)
   const paused = w.status === "paused"
   const visible = visibleExercises(w)
@@ -109,6 +113,8 @@ export function buildWorkoutActivityProps({ workout: w, focusedExerciseKey, rest
     durationStartMs: paused ? null : new Date(w.startedAt).getTime() + w.pausedSeconds * 1000,
     durationText: paused ? formatDurationTimer(elapsed) : null,
     ...restProps(rest, now),
+    canComplete: false,
+    rirPrompt: null,
   }
   const focused = focusedExercise(w, focusedExerciseKey)
   const position = (ex: WorkoutExerciseDto) => visible.indexOf(ex) + 1
@@ -116,16 +122,17 @@ export function buildWorkoutActivityProps({ workout: w, focusedExerciseKey, rest
   if (!focused)
     return { ...base, status: paused ? "paused" : "running", title: w.name, progress: paused ? "Workout pausiert" : "Noch keine Übungen", progressShort: "", setShort: null, target: null, last: null }
 
-  // The focused exercise is done: point at the next one with open sets.
-  const current = nextOpenSet(focused) ? focused : nextExerciseWithOpenSets(visible, keyOf(focused))
-  const set = current ? nextOpenSet(current) : null
-  if (!current || !set) {
+  const upcoming = upcomingSet(w, focusedExerciseKey)
+  // Same rules as the app: only working sets that were not taken to failure get the question.
+  const rirSet = rirPendingSetKey ? visible.flatMap(e => e.sets).find(s => keyOf(s) === rirPendingSetKey) : undefined
+  const rirPrompt = !paused && rirSet?.completed && !isWarmup(rirSet) && rirSet.setType !== "failure" ? { setKey: rirPendingSetKey! } : null
+  if (!upcoming) {
     const done = working.filter(s => s.completed).length
-    return { ...base, status: paused ? "paused" : "done", title: "Alle Sätze erledigt", progress: paused ? "Workout pausiert" : `${done} Arbeitssätze`, progressShort: `${done} Sätze`, setShort: null, target: null, last: lastLine(focused, unit, lookup) }
+    return { ...base, status: paused ? "paused" : "done", title: "Alle Sätze erledigt", progress: paused ? "Workout pausiert" : `${done} Arbeitssätze`, progressShort: `${done} Sätze`, setShort: null, target: null, last: lastLine(focused, unit, lookup), rirPrompt }
   }
 
+  const { exercise: current, set, upNext } = upcoming
   const labels = setLabels(current, set)
-  const upNext = current !== focused
   const exercisePos = `Übung ${position(current)} von ${visible.length}`
   return {
     ...base,
@@ -136,6 +143,8 @@ export function buildWorkoutActivityProps({ workout: w, focusedExerciseKey, rest
     setShort: labels.counter,
     target: formatValues(effectiveValues(current, set, lookup), current, unit, lookup),
     last: lastLine(current, unit, lookup),
+    canComplete: !paused,
+    rirPrompt,
   }
 }
 
@@ -156,6 +165,8 @@ export function buildFinishedActivityProps(w: WorkoutDto, now: number): WorkoutA
     durationText: formatDurationTimer(seconds),
     rest: null,
     restPausedText: null,
+    canComplete: false,
+    rirPrompt: null,
   }
 }
 

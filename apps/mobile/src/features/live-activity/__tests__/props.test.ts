@@ -33,7 +33,7 @@ const workout = (exercises: WorkoutExerciseDto[], p: Partial<WorkoutDto> = {}): 
   exercises,
   ...p,
 })
-const build = (w: WorkoutDto, p: Partial<ActivityInput> = {}) => buildWorkoutActivityProps({ workout: w, focusedExerciseKey: null, rest: IDLE_REST_TIMER, unit: "kg", lookup, now: NOW, ...p })
+const build = (w: WorkoutDto, p: Partial<ActivityInput> = {}) => buildWorkoutActivityProps({ workout: w, focusedExerciseKey: null, rirPendingSetKey: null, rest: IDLE_REST_TIMER, unit: "kg", lookup, now: NOW, ...p })
 
 describe("buildWorkoutActivityProps", () => {
   it("shows the next open set with target and last set of a running workout", () => {
@@ -104,6 +104,36 @@ describe("buildWorkoutActivityProps", () => {
     const w = workout(Array.from({ length: 12 }, () => exercise(long, [set({ weightGrams: 80000, reps: 8, rir: 4, completed: true, completedAt: "t" }), set()])))
     const rest: RestTimerSnapshot = { endsAt: NOW + 60_000, durationSeconds: 120, remainingWhenPaused: null, notificationId: null, label: null }
     expect(JSON.stringify(build(w, { rest })).length).toBeLessThan(1024)
+  })
+})
+
+describe("buttons and RIR question", () => {
+  it("offers 'Satz ✓' for a running workout with an open set, not when paused or done", () => {
+    expect(build(workout([exercise("Bankdrücken", [set()])])).canComplete).toBe(true)
+    expect(build(workout([exercise("Bankdrücken", [set()])], { status: "paused", pausedAt: new Date(NOW).toISOString() })).canComplete).toBe(false)
+    expect(build(workout([exercise("Bankdrücken", [set({ completed: true })])])).canComplete).toBe(false)
+  })
+  it("asks for RIR after a completed working set", () => {
+    const s1 = set({ completed: true })
+    const w = workout([exercise("Bankdrücken", [s1, set()])])
+    expect(build(w, { rirPendingSetKey: s1.id }).rirPrompt).toEqual({ setKey: s1.id })
+  })
+  it("does not ask after warm-ups, sets to failure, unknown or open sets, or while paused", () => {
+    const warm = set({ setType: "warmup", completed: true })
+    const failure = set({ setType: "failure", completed: true })
+    const open = set()
+    const w = workout([exercise("Bankdrücken", [warm, failure, open])])
+    expect(build(w, { rirPendingSetKey: warm.id }).rirPrompt).toBeNull()
+    expect(build(w, { rirPendingSetKey: failure.id }).rirPrompt).toBeNull()
+    expect(build(w, { rirPendingSetKey: open.id }).rirPrompt).toBeNull()
+    expect(build(w, { rirPendingSetKey: "missing" }).rirPrompt).toBeNull()
+    const done = set({ completed: true })
+    const paused = workout([exercise("Bankdrücken", [done])], { status: "paused", pausedAt: new Date(NOW).toISOString() })
+    expect(build(paused, { rirPendingSetKey: done.id }).rirPrompt).toBeNull()
+  })
+  it("keeps the question after the last set, while the final rest runs", () => {
+    const last = set({ completed: true })
+    expect(build(workout([exercise("Bankdrücken", [last])]), { rirPendingSetKey: last.id })).toMatchObject({ status: "done", rirPrompt: { setKey: last.id } })
   })
 })
 

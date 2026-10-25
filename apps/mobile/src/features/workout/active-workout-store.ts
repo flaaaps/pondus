@@ -7,7 +7,7 @@ import { activeWorkoutStorage } from "@/storage/active-workout"
 import { applyLocalMutation, mergeLocalDrafts } from "@/storage/local-reducer"
 import { createOutbox, sqliteOutboxStorage, type Outbox } from "@/storage/outbox"
 import { uuid } from "@/lib/uuid"
-import { focusedExercise, keyOf, nextOpenSet, planCompletion, type LibraryLookup, type SetCompletion } from "./selectors"
+import { keyOf, planCompletion, upcomingSet, type LibraryLookup, type SetCompletion } from "./selectors"
 
 export type SyncStatus = "idle" | "syncing" | "offline" | "error"
 
@@ -46,7 +46,7 @@ interface ActiveWorkoutState {
   setRirPending: (setKey: string | null) => void
   /** Ticks a set off with its effective values, starts the rest and asks for RIR. `advanceFocus` moves on to the next exercise right away. */
   completeSet: (api: ApiClient, target: { exerciseKey: string; setKey: string }, opts: CompleteOptions) => SetCompletion | null
-  /** Ticks off the next open set of the focused exercise, the one the screen and the Live Activity show. */
+  /** Ticks off the upcoming set (see `upcomingSet`), the one the Live Activity shows. */
   completeNextSet: (api: ApiClient, opts: CompleteOptions) => SetCompletion | null
   /** Saves the RIR of a completed set and closes the RIR question for it. */
   setRir: (api: ApiClient, setKey: string, rir: number) => void
@@ -411,9 +411,11 @@ export const useActiveWorkoutStore = create<ActiveWorkoutState>()((set, get) => 
 
     completeNextSet(api, opts) {
       const w = get().workout
-      const ex = w ? focusedExercise(w, get().focusedExerciseKey) : null
-      const s = ex ? nextOpenSet(ex) : null
-      return ex && s ? get().completeSet(api, { exerciseKey: keyOf(ex), setKey: keyOf(s) }, opts) : null
+      const next = w ? upcomingSet(w, get().focusedExerciseKey) : null
+      if (!next) return null
+      // The focused exercise was done: the set belongs to the next one, so focus follows.
+      if (next.upNext) get().focusExercise(keyOf(next.exercise))
+      return get().completeSet(api, { exerciseKey: keyOf(next.exercise), setKey: keyOf(next.set) }, opts)
     },
 
     setRir(api, setKey, rir) {

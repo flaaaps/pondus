@@ -333,22 +333,23 @@ Umgesetzt und im Simulator geprüft: Start beim aktiven Workout, Updates nur bei
 - Einstellungsschalter.
 - Manuelle QA nach Abschnitt 10.
 
-### Phase D – Buttons und RIR-Abfrage ⬜ (2 bis 2,5 Tage, Weg 1)
-- `addUserInteractionListener` in `actions.ts` mit diesen Targets:
+### Phase D – Buttons und RIR-Abfrage 🟡 (25.10.2026, Gerätetest offen)
+- `addUserInteractionListener` in `live-activity.ts`, beim Import registriert. `actions.ts` bildet die Targets ab:
 
   | Target | Aktion |
   | --- | --- |
-  | `complete-set` | `completeNextSet()` |
-  | `rest-minus-15` | `rest.adjust(-15)` |
-  | `rest-plus-15` | `rest.adjust(15)` |
-  | `rest-done` | `rest.stop()` |
-  | `rir-0` … `rir-4` | `setRir(rirPendingSetId, n)`; „4+“ speichert 4 wie in der App |
+  | `complete-set` | `completeNextSet()` mit `advanceFocus`, danach Auswahl im Editor zurücksetzen |
+  | `rest-minus-15` | `rest.adjust(-15)`, nur bei laufender Pause |
+  | `rest-plus-15` | `rest.adjust(15)`, nur bei laufender Pause |
+  | `rest-done` | `rest.stop()`, nur bei laufender Pause |
+  | `rir-0` … `rir-4` | `setRir(rirPendingSetKey, n)`; „4+“ speichert 4 wie in der App |
 
-- Die bestehende Notification-Logik im Pausentimer plant sich bei `adjust` und `stop` automatisch neu oder bricht ab.
-- Der Controller schreibt danach die neuen Props.
-- RIR-Taps prüfen, dass `rirPendingSetId` noch zum angezeigten Satz gehört. Ein veralteter Tap nach einem Zustandswechsel wird verworfen.
-- Idempotenz: Doppelte Taps auf „Satz ✓“ und RIR innerhalb von 1 Sekunde ignorieren, damit kein Satz doppelt abgehakt wird. „±15 s“ und „Fertig“ nicht entprellen, schnelle Mehrfach-Taps auf „±15 s“ sind gewollt (im Spike beobachtet).
-- Taps verwerfen, deren `source` (Activity-ID) nicht zur aktuellen Activity gehört, zum Beispiel von einer veralteten Activity nach einem Absturz.
+- **Buttons im Layout:** Mit laufender Pause „Satz ✓ · −15 s · +15 s · Fertig“, ohne Pause nur „Satz ✓“. Ist eine RIR-Abfrage offen und läuft die Pause, ersetzt die RIR-Reihe die Pausen-Buttons. Ist die Pause vorbei, kommt „Satz ✓“ zurück. VoiceOver-Labels für alle Buttons.
+- **Gleicher Satz in App und Activity:** `upcomingSet()` in `selectors.ts` bestimmt den Satz für „Satz ✓“, auch wenn die fokussierte Übung schon fertig ist. Dann wechselt der Fokus mit.
+- **Veraltete Taps:** Taps verwerfen, deren `source` nicht die aktuelle Activity ist. RIR-Taps zählen nur, wenn die offene Abfrage in der App dieselbe ist wie die zuletzt gesendete.
+- **Entprellung:** „Satz ✓“ und RIR innerhalb von 1 Sekunde nur einmal. Im Simulator gefunden: Die RIR-Reihe ersetzt „Satz ✓“ an derselben Stelle, und die zweite Hälfte eines Doppeltaps landete auf „0“. RIR-Taps innerhalb von 1 Sekunde nach „Satz ✓“ zählen deshalb nicht. „±15 s“ bleibt ohne Entprellung.
+- **Zusammenfassung:** Die Zusammenfassung des vorigen Workouts verschwindet, sobald das nächste eine Activity startet. Das gilt nur innerhalb desselben App-Prozesses, nach einem Neustart läuft sie nach 15 Minuten ab.
+- **Im Simulator geprüft:** RIR vom Sperrbildschirm, „+15 s“ (Pausenende +15 s), Doppeltap auf „Satz ✓“ (ein Satz, keine RIR-Antwort), letzter Satz bis „Alle Sätze erledigt“, App-Screen danach stimmig, Übernahme nach Neustart ohne Duplikat. Offen ist der Gerätetest nach Abschnitt 10.
 - Haptik gibt es auf dem Sperrbildschirm nicht. Die Bestätigung ist die sichtbare Änderung der Activity.
 
 ### Phase E – Feinschliff und Doku ⬜ (0,5 Tage)

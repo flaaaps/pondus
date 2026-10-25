@@ -1,5 +1,5 @@
 import type { WorkoutDto, WorkoutExerciseDto, WorkoutSetDto } from "@pondus/shared"
-import { completionPatch, deriveScreenState, effectiveValues, focusedExercise, keyOf, nextExerciseWithOpenSets, numberFor, planCompletion, warmupSuggestion, type LibraryLookup } from "../selectors"
+import { completionPatch, deriveScreenState, effectiveValues, focusedExercise, keyOf, nextExerciseWithOpenSets, numberFor, planCompletion, upcomingSet, warmupSuggestion, type LibraryLookup } from "../selectors"
 
 const lookup: LibraryLookup = () => ({ equipment: ["barbell"], loadType: "free_weight", slug: "barbell-bench-press" })
 
@@ -163,5 +163,25 @@ describe("planCompletion", () => {
     const ex = exercise([done])
     expect(planCompletion(w([ex]), keyOf(ex), keyOf(done), lookup, 90)).toBeNull()
     expect(planCompletion(w([ex]), keyOf(ex), "missing", lookup, 90)).toBeNull()
+  })
+})
+
+describe("upcomingSet", () => {
+  const w = (exercises: WorkoutExerciseDto[]) => ({ status: "in_progress", exercises }) as WorkoutDto
+  it("is the next open set of the focused exercise", () => {
+    const done = set({ completed: true })
+    const open = set()
+    const ex = exercise([done, open])
+    expect(upcomingSet(w([ex]), keyOf(ex))).toEqual({ exercise: ex, set: open, upNext: false })
+  })
+  it("moves on to the next exercise when the focused one is done", () => {
+    const a = exercise([set({ completed: true })])
+    const open = set()
+    const b = exercise([open])
+    expect(upcomingSet(w([a, b]), keyOf(a))).toEqual({ exercise: b, set: open, upNext: true })
+  })
+  it("is null when nothing is left", () => {
+    expect(upcomingSet(w([exercise([set({ completed: true })])]), null)).toBeNull()
+    expect(upcomingSet(w([]), null)).toBeNull()
   })
 })

@@ -1,15 +1,18 @@
 import { AppState } from "react-native"
-import { createLiveActivity } from "expo-widgets"
+import { addUserInteractionListener, createLiveActivity } from "expo-widgets"
 import { create } from "zustand"
 import type { ExerciseDto } from "@pondus/shared"
 import { useActiveWorkoutStore } from "@/features/workout/active-workout-store"
+import { useWorkoutUiStore } from "@/features/workout/workout-ui-store"
 import { keyOf, type LibraryLookup } from "@/features/workout/selectors"
 import { queryClient, queryKeys } from "@/lib/query-client"
 import { useRestTimerStore } from "@/services/rest-timer-store"
+import { useSessionStore } from "@/services/session-store"
 import { toRestTimerSnapshot } from "@/services/rest-timer-snapshot"
 import { useSettingsStore } from "@/services/settings-store"
 import { activeWorkoutStorage } from "@/storage/active-workout"
 import { kv } from "@/storage/db"
+import { createActivityActionHandler } from "./actions"
 import { createActivityController, type ActivityController, type ActivityFactory, type DesiredActivity } from "./controller"
 import { buildFinishedActivityProps, buildWorkoutActivityProps, type WorkoutActivityProps } from "./props"
 import { workoutActivityLayout } from "./WorkoutActivity"
@@ -37,7 +40,7 @@ function libraryLookup(): LibraryLookup {
 let lastWorkoutKey: string | null = null
 
 function desiredActivity(): DesiredActivity {
-  const { workout, focusedExerciseKey } = useActiveWorkoutStore.getState()
+  const { workout, focusedExerciseKey, rirPendingSetKey } = useActiveWorkoutStore.getState()
   const settings = useSettingsStore.getState()
   if (!settings.liveActivityEnabled) return { kind: "none" }
   const now = Date.now()
@@ -49,10 +52,29 @@ function desiredActivity(): DesiredActivity {
   }
   lastWorkoutKey = keyOf(workout)
   const rest = toRestTimerSnapshot(useRestTimerStore.getState())
-  return { kind: "active", props: buildWorkoutActivityProps({ workout, focusedExerciseKey, rest, unit: settings.weightUnit, lookup: libraryLookup(), now }) }
+  return { kind: "active", props: buildWorkoutActivityProps({ workout, focusedExerciseKey, rirPendingSetKey, rest, unit: settings.weightUnit, lookup: libraryLookup(), now }) }
 }
 
 let controller: ActivityController | null = null
+
+/** Button taps arrive while the app process lives (also suspended or with the iPhone locked). */
+const handleTap = createActivityActionHandler({
+  currentActivityId: () => controller?.activityId() ?? null,
+  shownRirSetKey: () => controller?.shownProps()?.rirPrompt?.setKey ?? null,
+  pendingRirSetKey: () => useActiveWorkoutStore.getState().rirPendingSetKey,
+  restRunning: () => useRestTimerStore.getState().endsAt !== null,
+  completeNextSet: () => {
+    const { defaultRestSeconds } = useSettingsStore.getState()
+    const done = useActiveWorkoutStore.getState().completeNextSet(useSessionStore.getState().api, { lookup: libraryLookup(), defaultRestSeconds, advanceFocus: true })
+    // The editor may still point at the set just ticked off; let it fall back to the next open one.
+    if (done) useWorkoutUiStore.getState().selectSet(null)
+  },
+  adjustRest: delta => useRestTimerStore.getState().adjust(delta),
+  stopRest: () => useRestTimerStore.getState().stop(),
+  setRir: (setKey, rir) => useActiveWorkoutStore.getState().setRir(useSessionStore.getState().api, setKey, rir),
+})
+// Registered at import, as early as possible after a launch.
+addUserInteractionListener(event => void handleTap(event))
 
 /** Starts mirroring the active workout into a Live Activity. Call once after the stores are hydrated. */
 export function startLiveActivity() {

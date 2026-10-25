@@ -45,6 +45,9 @@ export const FINISHED_VISIBLE_MS = 15 * 60 * 1000
 export function createActivityController(deps: ActivityControllerDeps) {
   let current: { handle: ActivityHandle; workoutKey: string } | null = null
   let lastSent: string | null = null
+  let lastProps: WorkoutActivityProps | null = null
+  /** Summary of the last completed workout, still on the Lock Screen; a new workout replaces it. */
+  let summary: ActivityHandle | null = null
   let adopted = false
   /** Workout for which starting failed; retried after `retryStart()` (app back in the foreground). */
   let failedFor: string | null = null
@@ -60,6 +63,7 @@ export function createActivityController(deps: ActivityControllerDeps) {
   const forget = () => {
     current = null
     lastSent = null
+    lastProps = null
     deps.links.clear()
   }
 
@@ -91,8 +95,10 @@ export function createActivityController(deps: ActivityControllerDeps) {
 
     const { props } = desired
     if (desired.kind === "finished") {
-      if (current?.workoutKey === props.workoutKey) await endQuietly(current.handle, { after: new Date(deps.now() + FINISHED_VISIBLE_MS) }, props)
-      else if (current) await endQuietly(current.handle, "immediate")
+      if (current?.workoutKey === props.workoutKey) {
+        await endQuietly(current.handle, { after: new Date(deps.now() + FINISHED_VISIBLE_MS) }, props)
+        summary = current.handle
+      } else if (current) await endQuietly(current.handle, "immediate")
       if (current) forget()
       return
     }
@@ -106,8 +112,11 @@ export function createActivityController(deps: ActivityControllerDeps) {
       if (!deps.canStart() || failedFor === props.workoutKey) return
       try {
         const handle = deps.factory.start(props, `pondus://workout/${encodeURIComponent(props.workoutKey)}`, staleDateFor(props))
+        if (summary) await endQuietly(summary, "immediate")
+        summary = null
         current = { handle, workoutKey: props.workoutKey }
         lastSent = json
+        lastProps = props
         failedFor = null
         deps.links.save({ activityId: handle.getId(), workoutKey: props.workoutKey })
         deps.onStarted()
@@ -121,6 +130,7 @@ export function createActivityController(deps: ActivityControllerDeps) {
     try {
       await current.handle.update(props, staleDateFor(props))
       lastSent = json
+      lastProps = props
     } catch {
       // Ended by iOS (8 hours) or by the user: start a fresh one next time the app is in front.
       forget()
@@ -137,6 +147,10 @@ export function createActivityController(deps: ActivityControllerDeps) {
     retryStart() {
       failedFor = null
     },
+    /** Id of the activity on screen, to tell its button taps from those of a stale one. */
+    activityId: () => current?.handle.getId() ?? null,
+    /** What the activity shows right now (the props last sent). */
+    shownProps: () => lastProps,
   }
 }
 

@@ -14,6 +14,8 @@ const props = (p: Partial<WorkoutActivityProps> = {}): WorkoutActivityProps => (
   durationText: null,
   rest: null,
   restPausedText: null,
+  canComplete: true,
+  rirPrompt: null,
   ...p,
 })
 
@@ -79,6 +81,14 @@ describe("activity controller", () => {
     const summary = props({ status: "finished", title: "Workout beendet" })
     await t.controller.sync({ kind: "finished", props: summary })
     expect(t.started[0]!.end).toHaveBeenCalledWith({ after: new Date(1_000 + FINISHED_VISIBLE_MS) }, summary)
+  })
+  it("removes the summary of the last workout when the next one starts", async () => {
+    const t = setup()
+    await t.controller.sync({ kind: "active", props: props() })
+    await t.controller.sync({ kind: "finished", props: props({ status: "finished" }) })
+    await t.controller.sync({ kind: "active", props: props({ workoutKey: "w2" }) })
+    expect(t.started[0]!.end).toHaveBeenLastCalledWith("immediate", undefined)
+    expect(t.started).toHaveLength(2)
   })
   it("replaces the activity of another workout", async () => {
     const t = setup()

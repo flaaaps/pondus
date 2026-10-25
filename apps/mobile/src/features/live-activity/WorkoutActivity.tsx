@@ -2,8 +2,8 @@
 // extension's own JS engine. Inside it: no hooks, no module constants, no helpers from outside.
 // The components and modifiers imported below exist there as globals, so keep their names.
 // Layout and limits: docs/LIVE_ACTIVITIES.md, section 5 (banner max. about 160 pt).
-import { HStack, Image, ProgressView, Spacer, Text, VStack } from "@expo/ui/swift-ui"
-import { activityBackgroundTint, font, foregroundStyle, frame, labelsHidden, lineLimit, monospacedDigit, padding, tint } from "@expo/ui/swift-ui/modifiers"
+import { Button, HStack, Image, ProgressView, Spacer, Text, VStack } from "@expo/ui/swift-ui"
+import { accessibilityLabel, activityBackgroundTint, buttonStyle, controlSize, font, foregroundStyle, frame, labelsHidden, lineLimit, monospacedDigit, padding, tint } from "@expo/ui/swift-ui/modifiers"
 import type { LiveActivityComponent } from "expo-widgets"
 import type { WorkoutActivityProps } from "./props"
 
@@ -43,6 +43,28 @@ export const workoutActivityLayout: LiveActivityComponent<WorkoutActivityProps> 
       <Text modifiers={[monospacedDigit()]}>{props.durationText ?? ""}</Text>
     )
 
+  // Buttons (iOS 17+): their taps reach the app via addUserInteractionListener, see actions.ts.
+  // While a RIR question is open and the rest runs, the RIR row takes the place of the rest buttons.
+  const small = [buttonStyle("bordered"), controlSize("small")]
+  const buttonRow =
+    props.status !== "running" && props.status !== "done" ? null : props.rirPrompt !== null && resting ? (
+      <HStack spacing={6}>
+        <Text modifiers={[font({ textStyle: "caption", weight: "medium" }), accessibilityLabel("Wiederholungen in Reserve")]}>RIR</Text>
+        <Button target="rir-0" label="0" modifiers={[...small, accessibilityLabel("0, am Limit")]} />
+        <Button target="rir-1" label="1" modifiers={[...small, accessibilityLabel("1 Wiederholung in Reserve")]} />
+        <Button target="rir-2" label="2" modifiers={[...small, accessibilityLabel("2 Wiederholungen in Reserve")]} />
+        <Button target="rir-3" label="3" modifiers={[...small, accessibilityLabel("3 Wiederholungen in Reserve")]} />
+        <Button target="rir-4" label="4+" modifiers={[...small, accessibilityLabel("4 oder mehr Wiederholungen in Reserve")]} />
+      </HStack>
+    ) : props.canComplete || resting ? (
+      <HStack spacing={6}>
+        {props.canComplete ? <Button target="complete-set" label="Satz ✓" modifiers={[buttonStyle("borderedProminent"), controlSize("small"), tint(accent), accessibilityLabel("Satz abhaken")]} /> : null}
+        {resting ? <Button target="rest-minus-15" label="−15 s" modifiers={[...small, accessibilityLabel("Pause 15 Sekunden kürzer")]} /> : null}
+        {resting ? <Button target="rest-plus-15" label="+15 s" modifiers={[...small, accessibilityLabel("Pause 15 Sekunden länger")]} /> : null}
+        {resting ? <Button target="rest-done" label="Fertig" modifiers={[...small, accessibilityLabel("Pause beenden")]} /> : null}
+      </HStack>
+    ) : null
+
   return {
     banner: (
       <VStack alignment="leading" spacing={6} modifiers={[padding({ all: 14 }), activityBackgroundTint(null)]}>
@@ -59,6 +81,7 @@ export const workoutActivityLayout: LiveActivityComponent<WorkoutActivityProps> 
         </HStack>
         {restBar}
         {detailLine}
+        {buttonRow}
       </VStack>
     ),
     bannerSmall: (
@@ -86,6 +109,7 @@ export const workoutActivityLayout: LiveActivityComponent<WorkoutActivityProps> 
       <VStack alignment="leading" spacing={6}>
         {restBar}
         {detailLine}
+        {buttonRow}
       </VStack>
     ),
   }

@@ -128,6 +128,18 @@ export function focusedExercise(w: WorkoutDto, focusedKey: string | null): Worko
   return visible.find(e => keyOf(e) === focusedKey) ?? visible.find(e => e.sets.some(s => !s.completed)) ?? visible[0] ?? null
 }
 
+/**
+ * The set "Satz ✓" acts on: the next open set of the focused exercise, else (focused one done)
+ * of the next exercise with open sets. The Live Activity shows and ticks off exactly this set.
+ */
+export function upcomingSet(w: WorkoutDto, focusedKey: string | null): { exercise: WorkoutExerciseDto; set: WorkoutSetDto; upNext: boolean } | null {
+  const focused = focusedExercise(w, focusedKey)
+  if (!focused) return null
+  const exercise = nextOpenSet(focused) ? focused : nextExerciseWithOpenSets(visibleExercises(w), keyOf(focused))
+  const set = exercise ? nextOpenSet(exercise) : null
+  return exercise && set ? { exercise, set, upNext: exercise !== focused } : null
+}
+
 /** What ticking off a set does; the store applies it, the screen adds haptics, toasts and the delayed advance. */
 export interface SetCompletion {
   exercise: WorkoutExerciseDto
