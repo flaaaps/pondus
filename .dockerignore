@@ -1,0 +1,14 @@
+**/node_modules
+**/dist
+**/.expo
+**/ios
+**/android
+**/.pgdata
+**/coverage
+**/.env
+**/.env.*
+!**/.env.example
+.git
+brand
+docs
+apps/mobile
