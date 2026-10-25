@@ -1,0 +1,23 @@
+{
+  "name": "pondus",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@12.10.1",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "typecheck": "pnpm -r --workspace-concurrency=1 run typecheck",
+    "lint": "pnpm -r --workspace-concurrency=1 run lint",
+    "test": "pnpm -r --workspace-concurrency=1 run test",
+    "api": "pnpm --filter @pondus/api",
+    "mobile": "pnpm --filter @pondus/mobile",
+    "shared": "pnpm --filter @pondus/shared",
+    "brand:icons": "node brand/render-icons.mjs"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.3",
+    "prettier": "^3.6.2",
+    "@resvg/resvg-js": "^2.6.2"
+  }
+}

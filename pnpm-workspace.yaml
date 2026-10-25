@@ -1,0 +1,20 @@
+packages:
+  - apps/*
+  - packages/*
+onlyBuiltDependencies:
+  - embedded-postgres
+  - "@embedded-postgres/linux-arm64"
+  - "@embedded-postgres/darwin-arm64"
+  - "@embedded-postgres/linux-x64"
+  - "@embedded-postgres/darwin-x64"
+  - "@node-rs/argon2"
+  - esbuild
+# pnpm ≥ 12 key for the same thing
+allowBuilds:
+  embedded-postgres: true
+  "@embedded-postgres/linux-arm64": true
+  "@embedded-postgres/darwin-arm64": true
+  "@embedded-postgres/linux-x64": true
+  "@embedded-postgres/darwin-x64": true
+  "@node-rs/argon2": true
+  esbuild: true

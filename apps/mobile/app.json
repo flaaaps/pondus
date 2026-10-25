@@ -1,0 +1,39 @@
+{
+  "expo": {
+    "name": "Pondus",
+    "slug": "pondus",
+    "version": "0.1.0",
+    "scheme": "pondus",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "platforms": ["ios"],
+    "ios": {
+      "bundleIdentifier": "app.pondus.ios",
+      "supportsTablet": false,
+      "infoPlist": {
+        "UIBackgroundModes": ["audio"],
+        "NSUserNotificationsUsageDescription": "Pondus erinnert dich, wenn deine Satzpause vorbei ist.",
+        "ITSAppUsesNonExemptEncryption": false
+      },
+      "config": { "usesNonExemptEncryption": false }
+    },
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "imageWidth": 160,
+      "resizeMode": "contain",
+      "backgroundColor": "#F4F2EE",
+      "dark": { "backgroundColor": "#0B0C0E" }
+    },
+    "plugins": [
+      "expo-router",
+      "expo-sqlite",
+      "expo-secure-store",
+      "expo-font",
+      ["expo-splash-screen", { "image": "./assets/splash-icon.png", "imageWidth": 160, "resizeMode": "contain", "backgroundColor": "#F4F2EE", "dark": { "backgroundColor": "#0B0C0E" } }],
+      ["expo-notifications", { "icon": "./assets/mark-dark.png", "color": "#FF7A1A" }]
+    ],
+    "experiments": { "typedRoutes": true }
+  }
+}
