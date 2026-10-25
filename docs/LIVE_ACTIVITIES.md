@@ -123,45 +123,33 @@ Neuer Ordner `apps/mobile/src/features/live-activity/`:
 
 | Datei | Inhalt |
 | --- | --- |
-| `props.ts` | Typ `WorkoutActivityProps` und reine Funktion `buildWorkoutActivityProps(workout, rest, focus, settings, now)` |
+| `props.ts` | Typ `WorkoutActivityProps`, reine Funktionen `buildWorkoutActivityProps()` und `buildFinishedActivityProps()` |
 | `WorkoutActivity.tsx` | Widget-Komponente mit `'widget'`-Direktive und allen Layout-Regionen |
-| `controller.ts` | Abonniert die Stores, startet, aktualisiert und beendet die Activity |
+| `controller.ts` | Reine Steuerlogik mit injiziertem `expo-widgets`: starten, Diff-Update, beenden, nach Neustart übernehmen |
+| `live-activity.ts` | Verdrahtung: `createLiveActivity()`, Store-Abos, `AppState`, Status für den Einstellungsschalter |
 | `actions.ts` | Stufe 2: Button-Events auf Store-Aktionen abbilden |
-| `__tests__/props.test.ts` | Unit-Tests für die Props-Ableitung |
+| `__tests__/` | Unit-Tests für Props und Controller |
 
 ### 4.1 Props-Modell
 
 ```ts
-type WorkoutActivityProps = {
-  workoutId: string
-  title: string                 // "Push A"
-  status: "running" | "paused" | "done"   // done = alle Sätze abgehakt, Workout noch offen
-  effectiveStartMs: number      // startedAt + pausedSeconds, für den hochzählenden Timer
-  pausedAtMs: number | null     // friert den Dauer-Timer ein
-  exercise: {
-    name: string                // "Bankdrücken"
-    position: string            // "Übung 2 von 6"
-    setLabel: string            // "Satz 3 von 4" | "Aufwärmen 1 von 2"
-    target: string | null       // "80 kg × 8"
-    last: string | null         // "Zuletzt 80 kg × 8 · RIR 2"
-  } | null
-  next: string | null           // "Als Nächstes: Schrägbankdrücken", wenn die Übung fertig ist
-  progress: { done: number; total: number; label: string }   // "11 / 22 Sätze"
-  rest: {
-    startedAtMs: number
-    endsAtMs: number
-    pausedRemainingS: number | null   // Pausentimer angehalten
-    label: string               // "Pause"
-  } | null
-  rirPrompt: {                  // Stufe 2: offene RIR-Abfrage für den zuletzt abgehakten Satz
-    setId: string
-    label: string               // "RIR für Satz 2 · Bankdrücken"
-  } | null
-  accent: string                // Markenfarbe als Hex
+interface WorkoutActivityProps {
+  workoutKey: string                 // clientId ?? id, ordnet die Activity dem Workout zu
+  status: "running" | "paused" | "done" | "finished"   // done = alle Sätze abgehakt, finished = Workout beendet
+  title: string                      // "Bankdrücken", "Alle Sätze erledigt", "Workout beendet"
+  progress: string                   // "Übung 2 von 6 · Satz 3 von 4", "Als Nächstes · Übung 3 von 6", "Workout pausiert"
+  progressShort: string              // "2/6 · Satz 3/4" für expandedLeading
+  setShort: string | null            // "3/4" bzw. "A1" für compactLeading
+  target: string | null              // "80 kg × 8", "20 kg Unterst. × 8", "12 Wdh."
+  last: string | null                // "Zuletzt 80 kg × 8 · RIR 2"
+  durationStartMs: number | null     // laufendes Workout: startedAt + pausedSeconds, zählt hoch
+  durationText: string | null        // pausiert oder beendet: eingefrorene Dauer "32:10"
+  rest: { startMs: number; endMs: number } | null   // laufende Pause, staleDate = endMs
+  restPausedText: string | null      // in der App angehaltene Pause: "1:24"
 }
 ```
 
-Alle Strings sind fertig formatiert und auf Deutsch. Die Funktion ist rein und läuft ohne Native-Module, deshalb ist sie mit Jest vollständig testbar.
+Alle Strings sind fertig formatiert und auf Deutsch. `durationStartMs` ist exakt aus dem Workout berechnet und nicht aus `now`. So bleiben die Props zwischen zwei Änderungen gleich, und der Controller schickt kein Update. Stufe 2 ergänzt die offene RIR-Abfrage.
 
 ### 4.2 „Aktuelle Übung“ muss in den Store ✅
 
@@ -335,7 +323,9 @@ Ergebnisse in Abschnitt 7. Weg 1 ist bestätigt, das Layout aus Abschnitt 5 wurd
 ### Phase B – Refactor des Workout-Zustands ✅ (25.10.2026)
 Siehe 4.2. Jest-Tests für `focusedExercise`, `planCompletion` (Werte, Standardpause, Aufwärmsätze ohne Pause und RIR, kein RIR nach Satz bis Versagen, Wechsel zur nächsten Übung, Ende des Workouts) und `restoreRestTimer`. Im Simulator geprüft: Nach dem Beenden und Neustarten der App sind RIR-Abfrage und laufende Pause wieder da.
 
-### Phase C – Live Activity, nur Anzeige ⬜ (2 bis 3 Tage)
+### Phase C – Live Activity, nur Anzeige 🟡 (25.10.2026, Gerätetest offen)
+Umgesetzt und im Simulator geprüft: Start beim aktiven Workout, Updates nur bei Änderung, Sperrbildschirm, Dynamic Island (kompakt, erweitert), Zusammenfassung nach dem Beenden, sofortiges Ende beim Verwerfen, neue Activity, nachdem der Nutzer die alte weggewischt hat. Wischt der Nutzer eine Activity weg, fragt iOS beim nächsten Start „Möchtest du Live-Aktivitäten von Pondus weiterhin erlauben?“. Offen ist die manuelle QA auf dem iPhone nach Abschnitt 10.
+
 - `expo-widgets` und `@expo/ui` installieren (`~58.0.23`), Plugin konfigurieren, Prebuild prüfen, Metro mit `--clear` neu starten.
 - `buildWorkoutActivityProps()` mit Tests: laufendes Workout, pausiert, Pause läuft, Pause angehalten, Aufwärmsatz, letzte Übung fertig, alle Sätze fertig, leeres freies Training, übersprungene Übungen, `lb`, unterstützte Übung, Körpergewicht, Props unter 4 KB.
 - `WorkoutActivity.tsx` mit allen Regionen aus Abschnitt 5.

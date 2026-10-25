@@ -11,6 +11,7 @@ import { ThemeProvider, useTheme } from "@/design-system"
 import { queryClient, queryPersister } from "@/lib/query-client"
 import { useSessionStore } from "@/services/session-store"
 import { useActiveWorkoutStore } from "@/features/workout/active-workout-store"
+import { startLiveActivity } from "@/features/live-activity/live-activity"
 import { useRestTimerStore } from "@/services/rest-timer-store"
 import { useOutboxSync } from "@/services/sync"
 import { getDb } from "@/storage/db"
@@ -48,6 +49,7 @@ function Root() {
   useEffect(() => {
     hydrate()
     useRestTimerStore.getState().hydrate()
+    startLiveActivity()
     void restore()
   }, [hydrate, restore])
 

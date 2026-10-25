@@ -6,6 +6,7 @@ import { useDeleteAccount, useExercisePreferences, useExportData, useProfile, us
 import { useSessionStore, useUser } from "@/services/session-store"
 import { useSettingsStore } from "@/services/settings-store"
 import { useActiveWorkoutStore } from "@/features/workout/active-workout-store"
+import { useLiveActivityStatus } from "@/features/live-activity/live-activity"
 import { ENVIRONMENT_LABELS, EXPERIENCE_LABELS, GOAL_LABELS, WEEKDAYS_SHORT } from "@/lib/format"
 
 export default function ProfileScreen() {
@@ -15,6 +16,7 @@ export default function ProfileScreen() {
   const profile = useProfile()
   const prefs = useExercisePreferences()
   const settings = useSettingsStore()
+  const liveActivityUnavailable = useLiveActivityStatus(s => s.unavailable)
   const updateUser = useUpdateUser()
   const signOut = useSessionStore(s => s.signOut)
   const del = useDeleteAccount()
@@ -100,6 +102,17 @@ export default function ProfileScreen() {
                 <NumberField value={settings.defaultRestSeconds} onChange={v => settings.setDefaultRestSeconds(v ?? 120)} step={15} min={30} max={300} suffix="s" compact accessibilityLabel="Standardpause in Sekunden" />
               </View>
             }
+            last
+          />
+        </Card>
+      </Section>
+
+      <Section title="Aktives Workout">
+        <Card padding="none">
+          <ListRow
+            title="Live Activity auf dem Sperrbildschirm"
+            subtitle={liveActivityUnavailable ? "In den iOS-Einstellungen ausgeschaltet: Einstellungen → Pondus → Live-Aktivitäten" : "Übung, Satz und Pause auch in der Dynamic Island"}
+            trailing={<Switch accessibilityLabel="Live Activity auf dem Sperrbildschirm" value={settings.liveActivityEnabled} onValueChange={settings.setLiveActivityEnabled} trackColor={{ true: colors.accent }} />}
             last
           />
         </Card>
