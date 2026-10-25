@@ -1,5 +1,6 @@
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { ActionSheetIOS, Alert, View } from "react-native"
+import { SafeAreaView } from "react-native-safe-area-context"
 import { Stack, useLocalSearchParams, useRouter } from "expo-router"
 import type { PlanEditOp, PlanExerciseDto } from "@pondus/shared"
 import { MUSCLE_GROUPS } from "@pondus/shared"
@@ -7,6 +8,8 @@ import { Button, Card, ErrorState, ListRow, LoadingState, NumberField, Screen, S
 import { useEditPlan, useSession } from "@/features/plans/queries"
 import { useStartWorkout } from "@/features/workout/use-start-workout"
 import { useExercisePicker } from "@/features/exercises/picker-store"
+import { useAllExercises } from "@/features/exercises/queries"
+import { ExerciseThumbnail } from "@/components/ExerciseMedia"
 import { WEEKDAYS_LONG, WEEKDAYS_SHORT } from "@/lib/format"
 import { ApiError } from "@/lib/api-client"
 
@@ -22,6 +25,8 @@ export default function SessionScreen() {
   const edit = useEditPlan(q.data?.planId)
   const { start, starting } = useStartWorkout()
   const picker = useExercisePicker()
+  const library = useAllExercises()
+  const slugById = useMemo(() => new Map((library.data ?? []).filter(e => e.isSystem).map(e => [e.id, e.slug])), [library.data])
   const [editing, setEditing] = useState<string | null>(null)
 
   const apply = (ops: PlanEditOp[]) => edit.mutate(ops, { onSuccess: () => void q.refetch(), onError: e => Alert.alert("Änderung fehlgeschlagen", e instanceof ApiError ? e.message : "Unbekannter Fehler") })
@@ -64,7 +69,7 @@ export default function SessionScreen() {
   return (
     <>
       <Stack.Screen options={{ title: session.name, headerLargeTitle: false }} />
-      <Screen bottomInset={72}>
+      <Screen bottomInset={88}>
         <Card tone="muted">
           <Text variant="callout" color="secondary">
             {session.weekday === null ? "Kein fester Tag" : WEEKDAYS_LONG[session.weekday]} · ca. {session.estimatedDurationMinutes} min · {session.exercises.length} Übungen · {totalSets} Arbeitssätze
@@ -88,7 +93,7 @@ export default function SessionScreen() {
                 <ListRow
                   title={e.exerciseName}
                   subtitle={`${e.warmupSets ? `${e.warmupSets} Aufwärm- + ` : ""}${e.targetSets} × ${e.targetRepsMin}–${e.targetRepsMax} Wdh. · ${Math.round(e.restSeconds / 60 * 10) / 10} min Pause${e.targetRir !== null ? ` · RIR ${e.targetRir}` : ""}`}
-                  leading={<Text variant="calloutStrong" color="tertiary">{i + 1}</Text>}
+                  leading={<ExerciseThumbnail slug={slugById.get(e.exerciseId)} size={60} />}
                   onPress={() => onExerciseOptions(e, i)}
                   chevron={false}
                   trailing={<Text variant="footnote" color="accent">Optionen</Text>}
@@ -104,9 +109,12 @@ export default function SessionScreen() {
         </Section>
         {edit.isPending ? <LoadingState label="Wird gespeichert" /> : null}
       </Screen>
-      <View style={{ position: "absolute", left: space[4], right: space[4], bottom: space[6] }}>
-        <Button title="Dieses Training starten" fullWidth loading={starting} onPress={() => void start(session)} hapticStyle="medium" />
-      </View>
+      {/* Native SafeAreaView: its bottom inset includes the floating tab bar, so the button never sits underneath it. */}
+      <SafeAreaView edges={["bottom"]} pointerEvents="box-none" style={{ position: "absolute", left: 0, right: 0, bottom: 0 }}>
+        <View style={{ paddingHorizontal: space[4], paddingBottom: space[3] }}>
+          <Button title="Dieses Training starten" fullWidth loading={starting} onPress={() => void start(session)} hapticStyle="medium" />
+        </View>
+      </SafeAreaView>
     </>
   )
 }

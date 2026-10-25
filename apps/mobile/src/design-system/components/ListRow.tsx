@@ -52,6 +52,6 @@ export function ListRow({ title, subtitle, leading, trailing, value, onPress, ch
 }
 const styles = StyleSheet.create({
   row: { flexDirection: "row", alignItems: "center", gap: 12, minHeight: 52 },
-  leading: { width: 28, alignItems: "center" },
+  leading: { minWidth: 28, alignItems: "center" },
   text: { flex: 1, gap: 2 },
 })

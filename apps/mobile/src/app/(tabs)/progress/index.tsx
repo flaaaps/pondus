@@ -23,9 +23,8 @@ export default function ProgressScreen() {
     setRefreshing(false)
   }
 
-  if (overview.isLoading && !overview.data) return <LoadingState />
-  if (overview.isError && !overview.data) return <ErrorState onRetry={() => void overview.refetch()} />
-  const o = overview.data!
+  if (!overview.data) return overview.isError ? <ErrorState onRetry={() => void overview.refetch()} /> : <LoadingState />
+  const o = overview.data
   const chart = o.weeklyVolume.map(w => ({
     label: formatDate(`${w.weekStart}T12:00:00`, { day: "numeric", month: "numeric" }),
     value: metric === "tonnage" ? Math.round(gramsToUnit(w.tonnageGrams, unit)) : metric === "sets" ? w.workingSets : metric === "workouts" ? w.workouts : Math.round(w.durationSeconds / 60),
