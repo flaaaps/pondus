@@ -4,6 +4,7 @@ import { EQUIPMENT_LABELS, MUSCLE_GROUPS } from "@pondus/shared"
 import { Button, Card, Chip, ErrorState, LineChart, ListRow, LoadingState, Screen, Section, Text, useTheme } from "@/design-system"
 import { useAlternatives, useDeleteExercise, useExercise, useExerciseHistory, useToggleFavorite } from "@/features/exercises/queries"
 import { useExerciseProgress } from "@/features/progress/queries"
+import { ExerciseAnimation } from "@/components/ExerciseMedia"
 import { useSettingsStore } from "@/services/settings-store"
 import { CATEGORY_LABELS, DIFFICULTY_LABELS, formatDate, formatWeight } from "@/lib/format"
 import { gramsToUnit } from "@pondus/shared"
@@ -35,6 +36,7 @@ export default function ExerciseDetailScreen() {
         }}
       />
       <Screen>
+        <ExerciseAnimation slug={e.slug} />
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: space[2] }}>
           <Chip label={CATEGORY_LABELS[e.category] ?? e.category} size="sm" tone="accent" />
           <Chip label={DIFFICULTY_LABELS[e.difficulty] ?? e.difficulty} size="sm" />

@@ -4,6 +4,7 @@ import { SymbolView } from "expo-symbols"
 import type { ExerciseDto } from "@pondus/shared"
 import { EQUIPMENT, EQUIPMENT_LABELS, MUSCLE_GROUPS } from "@pondus/shared"
 import { Chip, EmptyState, ErrorState, Input, ListRow, LoadingState, Text, useTheme } from "@/design-system"
+import { ExerciseThumbnail } from "@/components/ExerciseMedia"
 import { useExercises, type ExerciseFilters } from "@/features/exercises/queries"
 import { CATEGORY_LABELS, DIFFICULTY_LABELS } from "@/lib/format"
 import { useSettingsStore } from "@/services/settings-store"
@@ -82,6 +83,7 @@ export function ExerciseList({ onPress, header, initialFilters, contentBottomIns
         <View style={{ backgroundColor: colors.surface, borderRadius: 0 }}>
           <ListRow
             title={item.nameDe}
+            leading={<ExerciseThumbnail slug={item.isSystem ? item.slug : null} size={60} />}
             subtitle={`${item.primaryMuscles.map(m => MUSCLE_GROUPS.find(g => g.slug === m)?.nameDe ?? m).join(", ")} · ${item.equipment.map(e => EQUIPMENT_LABELS[e].de).join(", ")}`}
             trailing={item.isFavorite ? <SymbolView name="heart.fill" size={14} tintColor={colors.accent} /> : item.isSystem ? undefined : <SymbolView name="person" size={14} tintColor={colors.textTertiary} />}
             onPress={() => onPress(item)}

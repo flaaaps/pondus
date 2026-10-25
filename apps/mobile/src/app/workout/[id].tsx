@@ -9,6 +9,7 @@ import { DEFAULT_INCREMENT_GRAMS } from "@pondus/shared"
 import { Button, Card, Chip, EmptyState, Text, useTheme } from "@/design-system"
 import { RestTimerBar } from "@/components/RestTimerBar"
 import { SetRow } from "@/components/SetRow"
+import { ExerciseAnimation, ExerciseThumbnail } from "@/components/ExerciseMedia"
 import { useActiveWorkoutStore } from "@/features/workout/active-workout-store"
 import { useElapsed } from "@/features/workout/use-elapsed"
 import { useExercisePicker } from "@/features/exercises/picker-store"
@@ -43,6 +44,7 @@ export default function ActiveWorkoutScreen() {
   const [finishing, setFinishing] = useState(false)
   const libraryById = useMemo(() => new Map((library.data ?? []).map(e => [e.id, e])), [library.data])
 
+  const slugFor = useCallback((ex: WorkoutExerciseDto) => (ex.exerciseId ? libraryById.get(ex.exerciseId)?.slug : undefined), [libraryById])
   const stepFor = useCallback(
     (ex: WorkoutExerciseDto) => {
       const ref = ex.exerciseId ? libraryById.get(ex.exerciseId) : undefined
@@ -162,6 +164,7 @@ export default function ActiveWorkoutScreen() {
           return (
             <Card key={ex.id} padding="sm" style={{ borderColor: focusIndex === i ? colors.accent : colors.border, borderWidth: focusIndex === i ? 1.5 : 0.5 }}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: space[2], paddingHorizontal: space[1], marginBottom: space[1] }}>
+                {focusIndex === i ? <ExerciseAnimation slug={slugFor(ex)} style={{ width: 84, borderRadius: 10 }} showIndicator={false} /> : <ExerciseThumbnail slug={slugFor(ex)} size={84} />}
                 <View style={{ flex: 1 }}>
                   <Text variant="bodyStrong" numberOfLines={1}>
                     {ex.exerciseNameSnapshot}
