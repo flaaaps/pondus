@@ -16,7 +16,8 @@
     "db:migrate:prod": "node dist/db/migrate.js",
     "db:seed": "tsx src/db/seed.ts",
     "db:create-test-user": "tsx src/db/create-test-user.ts",
-    "openapi": "tsx src/openapi.ts"
+    "openapi": "tsx src/openapi.ts",
+    "db:create-demo-account": "tsx src/db/create-demo-account.ts"
   },
   "dependencies": {
     "@fastify/cors": "^11.1.0",
