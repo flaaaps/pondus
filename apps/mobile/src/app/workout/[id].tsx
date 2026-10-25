@@ -19,6 +19,7 @@ import { useApi } from "@/services/session-store"
 import { useRestTimerStore } from "@/services/rest-timer-store"
 import { useSettingsStore } from "@/services/settings-store"
 import { formatTimer, formatTonnage } from "@/lib/format"
+import type { GuideSection } from "./guide"
 import { haptic } from "@/lib/haptics"
 import { tonnageGrams } from "@pondus/shared"
 
@@ -66,6 +67,8 @@ export default function ActiveWorkoutScreen() {
   const elapsed = useElapsed(workout)
   const unit = useSettingsStore(s => s.weightUnit)
   const defaultRest = useSettingsStore(s => s.defaultRestSeconds)
+  const introSeen = useSettingsStore(s => s.workoutIntroSeen)
+  const setIntroSeen = useSettingsStore(s => s.setWorkoutIntroSeen)
   const timer = useRestTimerStore()
   const timerActive = timer.endsAt !== null || timer.remainingWhenPaused !== null
   const picker = useExercisePicker()
@@ -136,6 +139,10 @@ export default function ActiveWorkoutScreen() {
   const targetFor = (ex: WorkoutExerciseDto, set: WorkoutSetDto) =>
     ex.nextTarget && ex.nextTarget.kind !== "no_data" && set.setType !== "warmup" && (set.targetWeightGrams !== null || set.targetReps !== null) ? { weightGrams: set.targetWeightGrams, reps: set.targetReps } : null
 
+  /** Working-set number as the lifter counts it: warm-ups don't take a number. */
+  const numberFor = (ex: WorkoutExerciseDto, set: WorkoutSetDto) => ex.sets.filter(s => s.setType !== "warmup").indexOf(set) + 1
+  /** No history for this exercise yet (and a rep range to aim for): explain how to pick a starting weight. */
+  const isFirstTime = (ex: WorkoutExerciseDto) => !ex.previous && (!ex.nextTarget || ex.nextTarget.kind === "no_data") && ex.targetRepsMin !== null && !ex.sets.some(s => s.completed && s.setType !== "warmup")
   const scrollToExercise = (index: number) => {
     const ex = visible[index]
     const y = ex ? cardY.current.get(ex.id) : undefined
@@ -183,7 +190,7 @@ export default function ActiveWorkoutScreen() {
     store.upsertSet(api, ex, { ...patch, clientId: set.clientId ?? set.id, setNumber: set.setNumber })
   }
   const setOptions = (ex: WorkoutExerciseDto, set: WorkoutSetDto) =>
-    ActionSheetIOS.showActionSheetWithOptions({ title: `Satz ${set.setNumber}`, options: ["Abbrechen", "RIR setzen (0–4)", "Satz löschen"], cancelButtonIndex: 0, destructiveButtonIndex: 2 }, idx => {
+    ActionSheetIOS.showActionSheetWithOptions({ title: set.setType === "warmup" ? "Aufwärmsatz" : `Satz ${numberFor(ex, set)}`, options: ["Abbrechen", "RIR setzen (0–4)", "Satz löschen"], cancelButtonIndex: 0, destructiveButtonIndex: 2 }, idx => {
       if (idx === 2) store.deleteSet(api, set)
       if (idx === 1) ActionSheetIOS.showActionSheetWithOptions({ title: "Wiederholungen in Reserve", options: ["Abbrechen", "0 – am Limit", "1", "2", "3", "4+"], cancelButtonIndex: 0 }, r => r > 0 && changeSet(ex, set, { rir: r - 1 }))
     })
@@ -211,6 +218,7 @@ export default function ActiveWorkoutScreen() {
     const open = visible.filter(e => !e.sets.some(s => s.completed)).length
     Alert.alert("Workout beenden?", `${doneSets} Arbeitssätze protokolliert${open ? `, ${open} Übung(en) ohne Satz` : ""}.`, [
       { text: "Weiter trainieren", style: "cancel" },
+      { text: "Verwerfen (nicht speichern)", style: "destructive", onPress: discard },
       {
         text: "Beenden",
         onPress: async () => {
@@ -227,13 +235,25 @@ export default function ActiveWorkoutScreen() {
       },
     ])
   }
-  const cancel = () =>
-    Alert.alert("Workout abbrechen?", "Alle Eingaben dieser Einheit werden verworfen.", [
-      { text: "Weiter", style: "cancel" },
-      { text: "Abbrechen", style: "destructive", onPress: async () => { timer.stop(); await store.cancel(api); router.back() } },
+  /** Throws the session away: nothing lands in history, stats, records or progression; the plan day stays open. */
+  const discard = () =>
+    Alert.alert("Training verwerfen?", "Die Einheit wird nicht gespeichert: Sie taucht weder im Verlauf noch in Statistik oder Rekorden auf, und der Trainingstag bleibt offen.", [
+      { text: "Weiter trainieren", style: "cancel" },
+      { text: "Verwerfen", style: "destructive", onPress: async () => { timer.stop(); await store.cancel(api); router.back() } },
     ])
   const togglePause = () => (paused ? store.resume(api) : store.pause(api))
+  const openGuide = (section?: GuideSection) => router.push({ pathname: "/workout/guide", params: section ? { section } : {} })
+  const workoutMenu = () =>
+    ActionSheetIOS.showActionSheetWithOptions({ options: ["Abbrechen", "So funktioniert’s", "Training verwerfen"], cancelButtonIndex: 0, destructiveButtonIndex: 2 }, idx => {
+      if (idx === 1) openGuide()
+      if (idx === 2) discard()
+    })
 
+  const HeaderIcon = ({ icon, label, onPress }: { icon: Parameters<typeof SymbolView>[0]["name"]; label: string; onPress: () => void }) => (
+    <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={({ pressed }) => ({ width: 44, height: 44, alignItems: "center", justifyContent: "center", opacity: pressed ? 0.5 : 1 })}>
+      <SymbolView name={icon} size={24} tintColor={colors.accent} accessibilityElementsHidden importantForAccessibility="no" />
+    </Pressable>
+  )
   const RoundAction = ({ icon, label, onPress }: { icon: Parameters<typeof SymbolView>[0]["name"]; label: string; onPress: () => void }) => (
     <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={() => { haptic("selection"); onPress() }} style={({ pressed }) => ({ width: 56, minHeight: 56, borderRadius: 28, alignItems: "center", justifyContent: "center", gap: 2, backgroundColor: pressed ? colors.surfaceMuted : "transparent" })}>
       <SymbolView name={icon} size={20} weight="semibold" tintColor={colors.textPrimary} accessibilityElementsHidden importantForAccessibility="no" />
@@ -245,24 +265,28 @@ export default function ActiveWorkoutScreen() {
 
   const primary = nextOpen
     ? {
-        title: nextOpen.set.setType === "warmup" ? "Aufwärmsatz abhaken" : `Satz ${nextOpen.set.setNumber} abhaken`,
+        title: nextOpen.set.setType === "warmup" ? "Aufwärmsatz abhaken" : `Satz ${numberFor(nextOpen.ex, nextOpen.set)} abhaken`,
         subtitle: nextOpen.ex.exerciseNameSnapshot,
-        a11y: `${nextOpen.ex.exerciseNameSnapshot}, Satz ${nextOpen.set.setNumber} abschließen`,
+        a11y: `${nextOpen.ex.exerciseNameSnapshot}, ${nextOpen.set.setType === "warmup" ? "Aufwärmsatz" : `Satz ${numberFor(nextOpen.ex, nextOpen.set)}`} abschließen`,
         onPress: () => completeSet(nextOpen.ex, nextOpen.set),
       }
     : { title: "Workout beenden", subtitle: `${doneSets} Arbeitssätze`, a11y: "Workout beenden", onPress: finish }
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
-      <View style={{ paddingTop: insets.top + space[2], paddingHorizontal: space[4], paddingBottom: space[2] }}>
-        <Text variant="title3" numberOfLines={2} accessibilityRole="header">
-          {workout.name}
-        </Text>
-        <Text variant="footnote" color="secondary">
-          {formatTimer(elapsed)} · {doneSets} Sätze · {formatTonnage(tonnage, unit)}
-          {paused ? " · pausiert" : ""}
-          {store.pending ? ` · ${store.sync === "offline" ? "offline" : "sync"} (${store.pending})` : ""}
-        </Text>
+      <View style={{ paddingTop: insets.top + space[2], paddingLeft: space[4], paddingRight: space[2], paddingBottom: space[2], flexDirection: "row", alignItems: "center", gap: space[1] }}>
+        <View style={{ flex: 1 }}>
+          <Text variant="title3" numberOfLines={2} accessibilityRole="header">
+            {workout.name}
+          </Text>
+          <Text variant="footnote" color="secondary">
+            {formatTimer(elapsed)} · {doneSets} Sätze · {formatTonnage(tonnage, unit)}
+            {paused ? " · pausiert" : ""}
+            {store.pending ? ` · ${store.sync === "offline" ? "offline" : "sync"} (${store.pending})` : ""}
+          </Text>
+        </View>
+        <HeaderIcon icon="questionmark.circle" label="So funktioniert’s" onPress={() => openGuide()} />
+        <HeaderIcon icon="ellipsis.circle" label="Trainingsoptionen" onPress={workoutMenu} />
       </View>
 
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: space[4], gap: space[2], paddingBottom: space[2] }} style={{ flexGrow: 0 }}>
@@ -280,6 +304,18 @@ export default function ActiveWorkoutScreen() {
             <Text variant="footnote" color="secondary">
               Die Zeit läuft nicht weiter. Tippe unten auf „Weiter“.
             </Text>
+          </Card>
+        ) : null}
+        {!introSeen ? (
+          <Card tone="accent" style={{ gap: space[2] }}>
+            <Text variant="calloutStrong">Kurz erklärt</Text>
+            <Text variant="footnote" color="secondary">
+              „W“ sind Aufwärmsätze – sie zählen nicht. Die nummerierten Sätze sind deine Arbeitssätze: Trag Gewicht und die wirklich geschafften Wiederholungen ein und hak den Satz ab. Daraus berechnet Pondus dein Ziel fürs nächste Mal.
+            </Text>
+            <View style={{ flexDirection: "row", gap: space[2] }}>
+              <Button title="Mehr erfahren" variant="secondary" size="sm" onPress={() => openGuide("logging")} />
+              <Button title="Verstanden" variant="ghost" size="sm" onPress={() => setIntroSeen(true)} />
+            </View>
           </Card>
         ) : null}
         {visible.length === 0 ? <EmptyState icon="plus.circle" title="Noch keine Übungen" body="Füge unten Übungen hinzu – aus der Bibliothek, mit Suche und Filtern." /> : null}
@@ -313,8 +349,23 @@ export default function ActiveWorkoutScreen() {
                 </View>
                 {badge && openReason === ex.id ? (
                   <Text variant="footnote" color="secondary" style={{ paddingHorizontal: space[1], marginBottom: space[2] }}>
-                    {ex.nextTarget!.reason}
+                    {ex.nextTarget!.reason}{" "}
+                    <Text variant="footnote" color="accent" accessibilityRole="link" onPress={() => openGuide("progression")}>
+                      Wie wird das berechnet?
+                    </Text>
                   </Text>
+                ) : null}
+                {isFirstTime(ex) ? (
+                  <Pressable accessibilityRole="button" accessibilityHint="Öffnet die Anleitung zum Startgewicht" onPress={() => openGuide("first-time")} style={({ pressed }) => ({ flexDirection: "row", gap: space[2], backgroundColor: colors.surfaceMuted, borderRadius: radius.md, padding: space[2], marginBottom: space[2], opacity: pressed ? 0.7 : 1 })}>
+                    <SymbolView name="lightbulb" size={18} tintColor={colors.accent} accessibilityElementsHidden importantForAccessibility="no" />
+                    <Text variant="footnote" color="secondary" style={{ flex: 1 }}>
+                      <Text variant="footnote">Zum ersten Mal? </Text>
+                      Wähle ein Gewicht, mit dem du {ex.targetRepsMin} saubere Wiederholungen schaffst{ex.targetRir !== null ? ` und noch etwa ${ex.targetRir} in Reserve hast` : ""}. Trag ein, was du wirklich geschafft hast – daraus entsteht dein nächstes Ziel.{" "}
+                      <Text variant="footnote" color="accent">
+                        So findest du dein Startgewicht
+                      </Text>
+                    </Text>
+                  </Pressable>
                 ) : null}
                 <View style={{ flexDirection: "row", paddingHorizontal: space[1], gap: space[2], marginBottom: 2 }} importantForAccessibility="no-hide-descendants" accessibilityElementsHidden>
                   {[
@@ -332,6 +383,7 @@ export default function ActiveWorkoutScreen() {
                   <SetRow
                     key={set.id}
                     set={set}
+                    displayNumber={numberFor(ex, set)}
                     unit={unit}
                     previous={hintFor(ex, set).value}
                     previousKind={hintFor(ex, set).kind}
@@ -370,7 +422,7 @@ export default function ActiveWorkoutScreen() {
           </Card>
         ) : null}
         <Button title="Übung hinzufügen" variant="secondary" fullWidth onPress={() => { picker.open({ title: "Übung hinzufügen", onPick: e => store.addExercise(api, e, { restSeconds: defaultRest }) }); router.push("/workout/pick-exercise") }} />
-        <Button title="Workout abbrechen" variant="ghost" onPress={cancel} style={{ alignSelf: "center" }} />
+        <Button title="Training verwerfen" variant="ghost" onPress={discard} style={{ alignSelf: "center" }} />
       </KeyboardAwareScrollView>
 
       <View pointerEvents="box-none" onLayout={e => setBottomBarHeight(e.nativeEvent.layout.height)} style={{ position: "absolute", left: space[3], right: space[3], bottom: insets.bottom + space[2], gap: space[2] }}>

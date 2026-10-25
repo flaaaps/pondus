@@ -11,11 +11,14 @@ interface SettingsState {
   restTimerNotifications: boolean
   restTimerHaptics: boolean
   defaultRestSeconds: number
+  /** The short "how to log" intro in the active workout was dismissed. */
+  workoutIntroSeen: boolean
   setAppearance: (a: Appearance) => void
   setWeightUnit: (u: WeightUnit) => void
   setRestTimerNotifications: (v: boolean) => void
   setRestTimerHaptics: (v: boolean) => void
   setDefaultRestSeconds: (v: number) => void
+  setWorkoutIntroSeen: (v: boolean) => void
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -26,11 +29,13 @@ export const useSettingsStore = create<SettingsState>()(
       restTimerNotifications: true,
       restTimerHaptics: true,
       defaultRestSeconds: 120,
+      workoutIntroSeen: false,
       setAppearance: appearance => set({ appearance }),
       setWeightUnit: weightUnit => set({ weightUnit }),
       setRestTimerNotifications: restTimerNotifications => set({ restTimerNotifications }),
       setRestTimerHaptics: restTimerHaptics => set({ restTimerHaptics }),
       setDefaultRestSeconds: defaultRestSeconds => set({ defaultRestSeconds }),
+      setWorkoutIntroSeen: workoutIntroSeen => set({ workoutIntroSeen }),
     }),
     { name: "pondus-settings", storage: createJSONStorage(() => AsyncStorage) },
   ),

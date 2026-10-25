@@ -9,6 +9,8 @@ import { SET_TYPE_LABELS, formatWeight } from "@/lib/format"
 
 export interface SetRowProps {
   set: WorkoutSetDto
+  /** Number shown for non-warm-up sets (counts working sets only, so warm-ups don't shift it). Defaults to `setNumber`. */
+  displayNumber?: number
   unit: WeightUnit
   previous?: { weightGrams: number | null; reps: number | null } | null
   /** What `previous` is: last session's value or a warm-up suggestion. */
@@ -34,7 +36,7 @@ const RIR_OPTIONS = [0, 1, 2, 3, 4]
  * One set: previous → weight → reps → done. Numbers are edited in place; the
  * checkmark commits with a haptic. Tapping the type cycles warm-up/working.
  */
-export const SetRow = memo(function SetRow({ set, unit, previous, previousKind = "previous", target, assisted, onChange, onComplete, onLongPress, stepGrams, setColumnWidth = 56, rirPrompt, onRir }: SetRowProps) {
+export const SetRow = memo(function SetRow({ set, displayNumber, unit, previous, previousKind = "previous", target, assisted, onChange, onComplete, onLongPress, stepGrams, setColumnWidth = 56, rirPrompt, onRir }: SetRowProps) {
   const { colors, space, radius } = useTheme()
   const stepUnit = unit === "kg" ? stepGrams / 1000 : Math.max(2.5, Math.round(gramsToUnit(stepGrams, unit) * 2) / 2)
   const weightValue = set.weightGrams === null ? null : Math.round(gramsToUnit(set.weightGrams, unit) * 100) / 100
@@ -44,7 +46,8 @@ export const SetRow = memo(function SetRow({ set, unit, previous, previousKind =
   const hasTarget = !!target && (target.weightGrams !== null || target.reps !== null)
   const offTarget = hasTarget && !set.completed && (target!.weightGrams !== set.weightGrams || target!.reps !== set.reps)
   const targetText = hasTarget ? `${target!.weightGrams === null ? "" : `${formatWeight(target!.weightGrams, unit)}${assisted ? " Unterst." : ""} × `}${target!.reps ?? "–"}` : ""
-  const typeLabel = set.setType === "warmup" ? "Aufwärmsatz" : `Satz ${set.setNumber}${set.setType === "working" ? "" : `, ${SET_TYPE_LABELS[set.setType]}`}`
+  const shownNumber = displayNumber ?? set.setNumber
+  const typeLabel = set.setType === "warmup" ? "Aufwärmsatz" : `Satz ${shownNumber}${set.setType === "working" ? "" : `, ${SET_TYPE_LABELS[set.setType]}`}`
   const setValue = `${set.weightGrams === null ? "kein Gewicht" : formatWeight(set.weightGrams, unit)}, ${set.reps ?? "keine"} Wiederholungen`
   return (
     <View style={{ backgroundColor: set.completed ? colors.successSoft : "transparent", borderRadius: radius.md }}>
@@ -63,7 +66,7 @@ export const SetRow = memo(function SetRow({ set, unit, previous, previousKind =
           style={{ width: setColumnWidth, minHeight: 44, alignItems: "center", justifyContent: "center" }}
         >
           <Text variant="calloutStrong" color={set.setType === "warmup" ? "tertiary" : set.setType === "working" ? "secondary" : "accent"}>
-            {set.setType === "warmup" ? "W" : set.setType === "drop" ? "D" : set.setType === "failure" ? "F" : String(set.setNumber)}
+            {set.setType === "warmup" ? "W" : set.setType === "drop" ? "D" : set.setType === "failure" ? "F" : String(shownNumber)}
           </Text>
           {/* Last time's value sits under the number: keeps the weight/reps fields wide enough to type into. */}
           {hasPrev ? (
