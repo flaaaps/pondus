@@ -16,6 +16,13 @@ export const progressOverviewDto = z.object({
   recentRecords: z.array(z.object({ exerciseId: z.uuid().nullable(), exerciseName: z.string(), type: z.enum(RECORD_TYPES), valueGrams: z.number().int().nullable(), reps: z.number().int().nullable(), weightGrams: z.number().int().nullable(), achievedAt: z.string(), isEstimate: z.boolean() })),
   weeklyVolume: z.array(z.object({ weekStart: z.string(), tonnageGrams: z.number().int(), workingSets: z.number().int(), workouts: z.number().int(), durationSeconds: z.number().int() })),
   muscleDistribution: z.array(z.object({ muscle: z.string(), workingSets: z.number() })),
+  /**
+   * This week's working sets per muscle (primary = 1, secondary = 0.5, completed workouts only)
+   * vs. the weekly target of the active plan's current version. Muscles with neither are omitted.
+   */
+  muscleWeeklySets: z
+    .array(z.object({ muscle: z.string(), label: z.string(), actualSets: z.number(), targetSets: z.number() }))
+    .optional(),
 })
 export type ProgressOverviewDto = z.infer<typeof progressOverviewDto>
 

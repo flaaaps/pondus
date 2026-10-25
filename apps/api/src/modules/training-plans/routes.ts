@@ -14,8 +14,8 @@ export const planRoutes: FastifyPluginAsyncZod = async app => {
   app.get("/sessions/:id", { schema: { tags: ["plans"], params: idParams, response: { 200: z.object({ planId: z.uuid(), planName: z.string(), versionNumber: z.number().int(), session: planSessionDto }) } } }, async req =>
     service.sessionDetail(req.userId, req.params.id),
   )
-  app.post("/sessions/:id/override", { schema: { tags: ["plans"], params: idParams, body: sessionOverrideBody, response: { 200: planWeekDto } } }, async req =>
-    service.overrideSession(req.userId, req.params.id, req.body),
+  app.post("/sessions/:id/override", { schema: { tags: ["plans"], params: idParams, querystring: z.object({ timeZone: z.string().max(64).optional() }), body: sessionOverrideBody, response: { 200: planWeekDto } } }, async req =>
+    service.overrideSession(req.userId, req.params.id, req.body, req.query.timeZone),
   )
   app.get("/:id", { schema: { tags: ["plans"], params: idParams, response: { 200: planDto } } }, async req => service.get(req.userId, req.params.id))
   app.get("/:id/versions/:version", { schema: { tags: ["plans"], params: idParams.extend({ version: z.coerce.number().int().min(1) }), response: { 200: planVersionDto } } }, async req =>

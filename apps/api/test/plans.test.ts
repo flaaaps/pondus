@@ -17,7 +17,8 @@ describe("exercise library", () => {
     const chest = await api(app, u.token, "GET", "/exercises?muscles=chest&equipment=dumbbell,bench&limit=50")
     const items = (chest.json as { items: { primaryMuscles: string[]; equipment: string[] }[] }).items
     expect(items.length).toBeGreaterThan(2)
-    for (const e of items) expect(e.equipment.every(x => ["dumbbell", "bench"].includes(x))).toBe(true)
+    // Equipment filter is OR: any selected item matches.
+    for (const e of items) expect(e.equipment.some(x => ["dumbbell", "bench"].includes(x))).toBe(true)
     const search = await api(app, u.token, "GET", "/exercises?q=bank")
     expect((search.json as { items: unknown[] }).items.length).toBeGreaterThan(3)
   })

@@ -16,14 +16,19 @@ import {
 import { badRequest, conflict, notFound } from "../../shared/errors.js"
 import { decodeCursor, encodeCursor } from "../../shared/pagination.js"
 import { toIso } from "../../shared/time.js"
+import type { WorkoutNextTarget } from "../../db/schema.js"
 import {
   accumulateBests,
   detectRecords,
   emptyBests,
+  incrementForExercise,
+  nextTargets,
   tonnageGrams,
   totalReps,
   workingSetCount,
   type ExerciseBests,
+  type LoadType,
+  type PerformanceSnapshot,
   type PerformedSet,
   type WorkoutDto,
   type WorkoutExerciseDto,
@@ -100,6 +105,20 @@ export function createWorkoutsService(db: Db) {
     return { performedAt: row.completedAt!.toISOString(), sets: sets.map(s => ({ setType: s.setType, weightGrams: s.weightGrams, reps: s.reps, rir: s.rir })) }
   }
 
+  /** Last `limit` completed performances of an exercise before `before` (newest first), for progression. */
+  async function recentPerformances(tx: DbOrTx, userId: string, exerciseId: string, before: Date, limit = 2): Promise<PerformanceSnapshot[]> {
+    const rows = await tx
+      .select({ workoutExerciseId: workoutExercises.id, completedAt: workouts.completedAt })
+      .from(workoutExercises)
+      .innerJoin(workouts, eq(workouts.id, workoutExercises.workoutId))
+      .where(and(eq(workouts.userId, userId), eq(workouts.status, "completed"), eq(workoutExercises.exerciseId, exerciseId), lt(workouts.completedAt, before), eq(workoutExercises.skipped, false)))
+      .orderBy(desc(workouts.completedAt))
+      .limit(limit)
+    if (!rows.length) return []
+    const sets = await tx.select().from(workoutSets).where(and(inArray(workoutSets.workoutExerciseId, rows.map(r => r.workoutExerciseId)), eq(workoutSets.completed, true))).orderBy(asc(workoutSets.setNumber))
+    return rows.map(r => ({ performedAt: r.completedAt!.toISOString(), sets: toPerformed(sets.filter(s => s.workoutExerciseId === r.workoutExerciseId)) }))
+  }
+
   async function toDto(tx: DbOrTx, w: WorkoutRow): Promise<WorkoutDto> {
     const exRows = await tx.select().from(workoutExercises).where(eq(workoutExercises.workoutId, w.id)).orderBy(asc(workoutExercises.sequence))
     const setRows = exRows.length ? await tx.select().from(workoutSets).where(inArray(workoutSets.workoutExerciseId, exRows.map(e => e.id))).orderBy(asc(workoutSets.setNumber)) : []
@@ -118,6 +137,7 @@ export function createWorkoutsService(db: Db) {
         targetRir: e.targetRir,
         skipped: e.skipped,
         notes: e.notes,
+        nextTarget: e.nextTarget ?? null,
         sets: setRows.filter(s => s.workoutExerciseId === e.id).map(setToDto),
         previous: e.exerciseId ? await previousPerformance(tx, w.userId, e.exerciseId, w.startedAt) : null,
       })
@@ -130,6 +150,7 @@ export function createWorkoutsService(db: Db) {
       trainingPlanId: w.trainingPlanId,
       trainingPlanVersionId: w.trainingPlanVersionId,
       sourceSessionId: w.sourceSessionId,
+      sourceSessionKey: w.sourceSessionKey,
       startedAt: w.startedAt.toISOString(),
       completedAt: toIso(w.completedAt),
       pausedAt: toIso(w.pausedAt),
@@ -139,6 +160,13 @@ export function createWorkoutsService(db: Db) {
       exercises: exercisesDto,
       updatedAt: w.updatedAt.toISOString(),
     }
+  }
+
+  async function loadTypes(tx: DbOrTx, ids: (string | null)[]): Promise<Map<string, LoadType>> {
+    const unique = [...new Set(ids.filter((x): x is string => !!x))]
+    if (!unique.length) return new Map()
+    const rows = await tx.select({ id: exercises.id, loadType: exercises.loadType }).from(exercises).where(inArray(exercises.id, unique))
+    return new Map(rows.map(r => [r.id, r.loadType as LoadType]))
   }
 
   async function touch(tx: DbOrTx, workoutId: string) {
@@ -168,24 +196,46 @@ export function createWorkoutsService(db: Db) {
       })
       .returning()
     if (!row) throw new Error("insert failed")
-    // Pre-create planned sets with targets from the last performance so the user only taps "done".
+    // Pre-create planned sets so the user only taps "done".
+    // - Without a rep range (free/added exercise): last performance as before.
+    // - With a prescription (plan session, repeat): progression targets via nextTargets.
+    //   target* = the target; weight/reps are prefilled with the target too (the DTO's
+    //   `previous` still shows last time, `nextTarget.kind/reason` explains the change).
+    //   If there is no usable history (no_data) or no target weight (bodyweight without
+    //   added load), the weight falls back to the last logged weight (or stays empty).
     const prev = await previousPerformance(tx, userId, input.exerciseId, startedAt)
     const prevWorking = prev?.sets.filter(s => s.setType === "working") ?? []
     const plannedSets = input.targetSets ?? 0
     const warmups = input.warmupSets ?? 0
+    let target: WorkoutNextTarget | null = null
+    if (plannedSets > 0 && input.targetRepsMin !== null && input.targetRepsMax !== null) {
+      const [ex] = await tx.select({ loadType: exercises.loadType, equipment: exercises.equipment }).from(exercises).where(eq(exercises.id, input.exerciseId))
+      if (ex) {
+        const increment = incrementForExercise(ex)
+        const history = await recentPerformances(tx, userId, input.exerciseId, startedAt)
+        target = nextTargets(
+          { repsMin: input.targetRepsMin, repsMax: input.targetRepsMax, targetRir: input.targetRir, targetSets: plannedSets, incrementGrams: increment, roundingStepGrams: increment > 0 ? increment : undefined },
+          history,
+          { loadType: ex.loadType as LoadType },
+        )
+        await tx.update(workoutExercises).set({ nextTarget: target }).where(eq(workoutExercises.id, row.id))
+      }
+    }
     const rows: (typeof workoutSets.$inferInsert)[] = []
     for (let i = 0; i < warmups; i++) rows.push({ workoutExerciseId: row.id, clientId: `${row.id}-w${i + 1}`, setNumber: i + 1, setType: "warmup", targetWeightGrams: null, targetReps: null })
     for (let i = 0; i < plannedSets; i++) {
       const p = prevWorking[i] ?? prevWorking[prevWorking.length - 1]
+      const weight = target?.weightGrams ?? p?.weightGrams ?? null
+      const reps = target?.repsPerSet[i] ?? p?.reps ?? input.targetRepsMin
       rows.push({
         workoutExerciseId: row.id,
         clientId: `${row.id}-s${i + 1}`,
         setNumber: warmups + i + 1,
         setType: "working",
-        targetWeightGrams: p?.weightGrams ?? null,
-        targetReps: p?.reps ?? input.targetRepsMin,
-        weightGrams: p?.weightGrams ?? null,
-        reps: p?.reps ?? input.targetRepsMin,
+        targetWeightGrams: weight,
+        targetReps: reps,
+        weightGrams: weight,
+        reps,
       })
     }
     if (rows.length) await tx.insert(workoutSets).values(rows)
@@ -207,6 +257,7 @@ export function createWorkoutsService(db: Db) {
         let planId: string | null = null
         let versionId: string | null = null
         let sessionId: string | null = null
+        let sessionKey: string | null = null
         const planned: Parameters<typeof insertExerciseWithPrefill>[4][] = []
 
         if (body.source.type === "plan_session") {
@@ -221,6 +272,7 @@ export function createWorkoutsService(db: Db) {
           planId = session.p.id
           versionId = session.v.id
           sessionId = session.s.id
+          sessionKey = session.s.sessionKey
           const planEx = await tx
             .select({ e: trainingPlanExercises, name: exercises.nameDe })
             .from(trainingPlanExercises)
@@ -247,6 +299,7 @@ export function createWorkoutsService(db: Db) {
           planId = src.trainingPlanId
           versionId = src.trainingPlanVersionId
           sessionId = src.sourceSessionId
+          sessionKey = src.sourceSessionKey
           const srcEx = await tx.select().from(workoutExercises).where(and(eq(workoutExercises.workoutId, src.id), eq(workoutExercises.skipped, false))).orderBy(asc(workoutExercises.sequence))
           srcEx.forEach((e, i) => {
             if (!e.exerciseId) return
@@ -264,13 +317,14 @@ export function createWorkoutsService(db: Db) {
           planId = session.p.id
           versionId = session.v.id
           sessionId = session.s.id
+          sessionKey = session.s.sessionKey
         } else if (body.source.name) {
           name = body.source.name
         }
 
         const [w] = await tx
           .insert(workouts)
-          .values({ userId, clientId: body.clientId, name, status: "in_progress", trainingPlanId: planId, trainingPlanVersionId: versionId, sourceSessionId: sessionId, startedAt })
+          .values({ userId, clientId: body.clientId, name, status: "in_progress", trainingPlanId: planId, trainingPlanVersionId: versionId, sourceSessionId: sessionId, sourceSessionKey: sessionKey, startedAt })
           .returning()
         if (!w) throw new Error("insert failed")
         for (const p of planned) await insertExerciseWithPrefill(tx, userId, w.id, startedAt, p)
@@ -440,6 +494,7 @@ export function createWorkoutsService(db: Db) {
 
         // Personal records per exercise, compared against bests *before* this workout.
         const exRows = await tx.select().from(workoutExercises).where(and(eq(workoutExercises.workoutId, w.id), eq(workoutExercises.skipped, false)))
+        const loadTypeById = await loadTypes(tx, exRows.map(e => e.exerciseId))
         for (const e of exRows) {
           if (!e.exerciseId) continue
           const sets = await tx.select().from(workoutSets).where(eq(workoutSets.workoutExerciseId, e.id))
@@ -449,7 +504,8 @@ export function createWorkoutsService(db: Db) {
           const previous: ExerciseBests = bestRow
             ? { maxWeightGrams: bestRow.maxWeightGrams, repsAtWeight: bestRow.repsAtWeight, maxSetVolumeGrams: bestRow.maxSetVolumeGrams, maxSessionVolumeGrams: bestRow.maxSessionVolumeGrams, estimated1rmGrams: bestRow.estimated1rmGrams }
             : emptyBests()
-          const events = detectRecords(previous, performed)
+          const opts = { loadType: loadTypeById.get(e.exerciseId) }
+          const events = detectRecords(previous, performed, opts)
           if (events.length) {
             await tx.insert(personalRecords).values(
               events.map(ev => ({
@@ -466,7 +522,7 @@ export function createWorkoutsService(db: Db) {
               })),
             )
           }
-          const next = accumulateBests(previous, performed)
+          const next = accumulateBests(previous, performed, opts)
           await tx
             .insert(exerciseBests)
             .values({ userId, exerciseId: e.exerciseId, ...next, updatedAt: new Date() })
@@ -496,11 +552,13 @@ export function createWorkoutsService(db: Db) {
             .select({
               workoutId: workoutExercises.workoutId,
               workingSets: sql<number>`count(*) filter (where ${workoutSets.completed} and ${workoutSets.setType} <> 'warmup')::int`,
-              tonnage: sql<number>`coalesce(sum(case when ${workoutSets.completed} and ${workoutSets.setType} <> 'warmup' then coalesce(${workoutSets.weightGrams},0) * coalesce(${workoutSets.reps},0) else 0 end), 0)::bigint`,
+              // Assisted sets log assistance, not load → no tonnage (body weight unknown).
+              tonnage: sql<number>`coalesce(sum(case when ${workoutSets.completed} and ${workoutSets.setType} <> 'warmup' and coalesce(${exercises.loadType}::text, '') <> 'assisted' then coalesce(${workoutSets.weightGrams},0) * coalesce(${workoutSets.reps},0) else 0 end), 0)::bigint`,
               exerciseCount: sql<number>`count(distinct ${workoutExercises.id}) filter (where ${workoutExercises.skipped} = false)::int`,
             })
             .from(workoutExercises)
             .leftJoin(workoutSets, eq(workoutSets.workoutExerciseId, workoutExercises.id))
+            .leftJoin(exercises, eq(exercises.id, workoutExercises.exerciseId))
             .where(inArray(workoutExercises.workoutId, page.map(p => p.id)))
             .groupBy(workoutExercises.workoutId)
         : []
@@ -524,7 +582,11 @@ export function createWorkoutsService(db: Db) {
 
   async function summarise(tx: DbOrTx, w: WorkoutRow): Promise<WorkoutSummaryDto> {
     const dto = await toDto(tx, w)
-    const allSets = dto.exercises.filter(e => !e.skipped).flatMap(e => e.sets.map(s => ({ setType: s.setType, weightGrams: s.weightGrams, reps: s.reps, completed: s.completed })))
+    const toLogged = async (d: WorkoutDto) => {
+      const lt = await loadTypes(tx, d.exercises.map(e => e.exerciseId))
+      return d.exercises.filter(e => !e.skipped).flatMap(e => e.sets.map(s => ({ setType: s.setType, weightGrams: s.weightGrams, reps: s.reps, completed: s.completed, loadType: e.exerciseId ? lt.get(e.exerciseId) : undefined })))
+    }
+    const allSets = await toLogged(dto)
     const records = await tx.select().from(personalRecords).where(eq(personalRecords.workoutId, w.id))
     // Compare with the previous completed workout of the same session (or same name).
     const [prev] = await tx
@@ -536,7 +598,7 @@ export function createWorkoutsService(db: Db) {
           eq(workouts.status, "completed"),
           ne(workouts.id, w.id),
           lt(workouts.startedAt, w.startedAt),
-          w.sourceSessionId ? eq(workouts.sourceSessionId, w.sourceSessionId) : eq(workouts.name, w.name),
+          w.sourceSessionKey ? eq(workouts.sourceSessionKey, w.sourceSessionKey) : w.sourceSessionId ? eq(workouts.sourceSessionId, w.sourceSessionId) : eq(workouts.name, w.name),
         ),
       )
       .orderBy(desc(workouts.startedAt))
@@ -544,7 +606,7 @@ export function createWorkoutsService(db: Db) {
     let comparison: WorkoutSummaryDto["comparison"] = null
     if (prev) {
       const prevDto = await toDto(tx, prev)
-      const prevSets = prevDto.exercises.filter(e => !e.skipped).flatMap(e => e.sets.map(s => ({ setType: s.setType, weightGrams: s.weightGrams, reps: s.reps, completed: s.completed })))
+      const prevSets = await toLogged(prevDto)
       comparison = { workoutId: prev.id, completedAt: prev.completedAt!.toISOString(), durationSeconds: prev.durationSeconds, workingSets: workingSetCount(prevSets), tonnageGrams: tonnageGrams(prevSets) }
     }
     return {

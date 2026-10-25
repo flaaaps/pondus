@@ -29,7 +29,7 @@ Basis: `/api/v1`. Auth: `Authorization: Bearer <accessToken>` (alle Endpunkte au
 | DELETE | `/me` | Konto löschen (kaskadiert) |
 
 ### Exercises
-| GET | `/exercises` | `q`, `muscles`, `equipment`, `category`, `difficulty` (CSV), `unilateral`, `favorites`, `custom`, `recent`, `sort=name|recent`, `limit`, `cursor` → `{ items, nextCursor, total }` |
+| GET | `/exercises` | `q`, `muscles`, `equipment`, `category`, `difficulty` (CSV), `unilateral`, `favorites`, `custom`, `recent`, `sort=name|recent`, `limit`, `cursor` → `{ items, nextCursor, total }`. `q` wird normalisiert (Groß/Klein, ä/ae/a, ö/oe/o, ü/ue/u, ß/ss, Bindestriche/Satzzeichen) und tokenweise gematcht: jedes Wort muss in Name (de/en), Slug oder Alias vorkommen („bankdrucken“, „bank drücken“ → „Bankdrücken mit Langhantel“). Treffer mit Namensanfang zuerst. CSV-Filter sind ODER-verknüpft innerhalb eines Filters, auch `equipment`: Eine Übung passt, wenn sie **irgendein** gewähltes Gerät nutzt (`equipment=barbell,dumbbell` → Langhantel- oder Kurzhantelübungen). Verschiedene Filter sind UND-verknüpft. |
 | GET | `/exercises/muscle-groups` | |
 | POST | `/exercises` | eigene Übung (201) |
 | GET/PATCH/DELETE | `/exercises/:id` | Detail / eigene bearbeiten / eigene soft-löschen |
@@ -40,21 +40,21 @@ Basis: `/api/v1`. Auth: `Authorization: Bearer <accessToken>` (alle Endpunkte au
 ### Plans
 | GET | `/plans` | Zusammenfassungen |
 | GET | `/plans/active` | aktiver Plan mit aktueller Version oder `null` |
-| GET | `/plans/week?date&timeZone` | Wochenansicht: Sessions mit Datum nach Overrides, Status, Workout-Link, `nextSessionId` |
+| GET | `/plans/week?date&timeZone` | Wochenansicht: Sessions mit Datum nach Overrides, Status, Workout-Link, `nextSessionId`, `today`, `timeZone`. „Heute“ und die Standardwoche kommen aus `timeZone` (IANA, Default/Fallback `Europe/Berlin`). Overrides und Workouts werden über `sessionKey` zugeordnet und überleben Planänderungen |
 | POST | `/plans/generate` | `{ name?, splitType?, activate=true }` → Plan (201); archiviert den bisher aktiven |
 | GET | `/plans/sessions/:id` | Session-Detail |
-| POST | `/plans/sessions/:id/override` | `{ weekStart, action: move|skip|reset, date? }` → Woche |
+| POST | `/plans/sessions/:id/override?timeZone` | `{ weekStart, action: move|skip|reset, date? }` → Woche. Gilt für den `sessionKey` der Session (eine Override-Zeile je Nutzer/Key/Woche), also auch für spätere Versionen |
 | GET | `/plans/:id` · `/plans/:id/versions/:n` | |
 | POST | `/plans/:id/activate` · `/archive` | |
-| POST | `/plans/:id/edit` | `{ ops[] }` – `rename_plan`, `rename_session`, `move_session`, `reorder_sessions`, `add_session`, `remove_session`, `add_exercise`, `remove_exercise`, `duplicate_exercise`, `swap_exercise`, `update_exercise`, `reorder_exercises` → neue Version |
+| POST | `/plans/:id/edit` | `{ ops[] }` – `rename_plan`, `rename_session`, `move_session`, `reorder_sessions`, `add_session`, `remove_session`, `add_exercise`, `remove_exercise`, `duplicate_exercise`, `swap_exercise`, `update_exercise`, `reorder_exercises` → neue Version. Folge-Edits innerhalb von 120 s auf eine durch Edit entstandene Version, die noch von keinem Workout und keiner offenen Anpassungs-Vorschau referenziert wird, aktualisieren diese Version in place (gleiche `versionNumber`, gleiche Session-`id`s; Plan-Exercise-`id`s ändern sich). Sessions behalten in jedem Fall ihren `sessionKey` |
 | POST | `/plans/:id/adjustments/preview` | `{ weeklyFrequency?, sessionDurationMinutes?, splitType?, weekdays?, updateProfile=true }` → `{ previewId, expiresAt, proposal, diff }` |
-| POST | `/plans/:id/adjustments/apply` | `{ previewId }` → neue Version (+ Profil-Update) |
+| POST | `/plans/:id/adjustments/apply` | `{ previewId }` → neue Version (+ Profil-Update). `sessionKey`s werden per `sequence` übernommen. Trägt der Plan noch den Auto-Namen (z. B. „Ganzkörper · 3× pro Woche“), wird er an Split/Frequenz angepasst; manuelle Namen bleiben |
 | DELETE | `/plans/:id/adjustments/:previewId` | verwerfen |
 
 ### Workouts
 | GET | `/workouts` | Historie (`from`, `to`, `exerciseId`, `status`, Cursor) |
 | GET | `/workouts/active` | laufendes/pausiertes Workout oder `null` |
-| POST | `/workouts` | `{ clientId, source: plan_session | repeat_workout | empty | plan_session_client, startedAt? }` → 201 neu / 200 bereits vorhanden |
+| POST | `/workouts` | `{ clientId, source: plan_session | repeat_workout | empty | plan_session_client, startedAt? }` → 201 neu / 200 bereits vorhanden. Übungen mit Wdh.-Bereich (Plan-Session, Wiederholen, Hinzufügen mit `targetRepsMin/Max`) bekommen `nextTarget = { kind: increase_load|increase_reps|hold|deload|no_data, weightGrams, repsPerSet[], targetRir, lastWeightGrams, basedOn, reason }` (Doppelprogression aus den letzten 2 Einheiten). Arbeitssätze werden mit dem Ziel vorbelegt (`targetWeightGrams/targetReps` und `weightGrams/reps`); ohne Ziellast (no_data, Körpergewicht) bleibt das zuletzt geloggte Gewicht bzw. leer. `previous` zeigt weiter die letzten Werte. Bei `loadType = assisted` ist Gewicht = Unterstützung (weniger = schwerer); dafür gibt es keine Gewichts-/Volumen-/e1RM-Rekorde, und die Tonnage ist 0 (Körpergewicht unbekannt). Erste Einheit einer Übung erzeugt keine Rekorde |
 | GET/PATCH | `/workouts/:id` | |
 | POST | `/workouts/:id/exercises` | hinzufügen (`replacesWorkoutExerciseId` für „nur heute tauschen“) |
 | PATCH | `/workouts/:id/exercises/:exerciseId` | `skipped`, `notes`, `restSeconds`, `sequence` |
@@ -65,7 +65,7 @@ Basis: `/api/v1`. Auth: `Authorization: Bearer <accessToken>` (alle Endpunkte au
 | GET | `/workouts/:id/summary` | |
 
 ### Progress
-| GET | `/progress/overview?range=4w|8w|12w|6m|1y|all&timeZone` | Wochenstatistik, Streak, letzte Einheit, Rekorde, Muskelverteilung |
+| GET | `/progress/overview?range=4w|8w|12w|6m|1y|all&timeZone` | Wochenstatistik, Streak, letzte Einheit, Rekorde, Muskelverteilung, `muscleWeeklySets: [{ muscle, label, actualSets, targetSets }]` (diese Woche, primär = 1, sekundär = 0,5, vs. `weeklySets` der aktiven Planversion). `timeZone` Default `Europe/Berlin` |
 | GET | `/progress/exercises/:id?range` | Verlauf, Bestwerte, Progressionsempfehlung |
 | GET | `/progress/records?exerciseId&limit&cursor` | |
 

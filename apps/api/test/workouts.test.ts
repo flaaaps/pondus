@@ -72,7 +72,8 @@ describe("workouts", () => {
     expect(summary.workout.status).toBe("completed")
     expect(summary.workingSets).toBeGreaterThan(0)
     expect(summary.tonnageGrams).toBeGreaterThan(0)
-    expect(summary.records.some(r => r.type === "max_weight")).toBe(true)
+    // First time an exercise is trained: baseline only, no "records" (B-21).
+    expect(summary.records).toHaveLength(0)
     expect(summary.comparison).toBeNull()
     // Untouched placeholder sets were dropped.
     expect(summary.workout.exercises.every(e => e.sets.every(s => s.completed))).toBe(true)
@@ -91,7 +92,18 @@ describe("workouts", () => {
     // Second workout: previous values are prefilled; heavier top set → new record and comparison.
     const w2 = (await api(app, u.token, "POST", "/workouts", { clientId: randomUUID(), source: { type: "plan_session", planSessionId: session.id } })).json as WorkoutDto
     expect(w2.exercises[0]!.previous).not.toBeNull()
-    expect(w2.exercises[0]!.sets.find(s => s.setType === "working")!.targetWeightGrams).toBe(60000)
+    // Targets come from nextTargets: 60 kg × 10 @ RIR 2 → load goes up or stays, never silently random.
+    const nt = w2.exercises[0]!.nextTarget!
+    expect(nt).toBeTruthy()
+    expect(nt.lastWeightGrams).toBe(60000)
+    expect(["increase_load", "increase_reps", "hold"]).toContain(nt.kind)
+    expect(nt.reason.length).toBeGreaterThan(0)
+    const firstWorking = w2.exercises[0]!.sets.find(s => s.setType === "working")!
+    expect(firstWorking.targetWeightGrams).toBe(nt.weightGrams)
+    expect(firstWorking.weightGrams).toBe(nt.weightGrams)
+    expect(firstWorking.targetReps).toBe(nt.repsPerSet[0])
+    if (nt.kind === "increase_load") expect(nt.weightGrams!).toBeGreaterThan(60000)
+    else expect(nt.weightGrams).toBe(60000)
     await logWorkingSets(u.token, w2, { 0: 62500, 1: 62500, 2: 62500 }, 10)
     const summary2 = (await api(app, u.token, "POST", `/workouts/${w2.id}/complete`, {})).json as WorkoutSummaryDto
     expect(summary2.records.some(r => r.type === "max_weight" && r.weightGrams === 62500)).toBe(true)
@@ -180,5 +192,139 @@ describe("workouts", () => {
     const w = (await api(app, a.token, "POST", "/workouts", { clientId: randomUUID(), source: { type: "empty" } })).json as WorkoutDto
     expect((await api(app, b.token, "GET", `/workouts/${w.id}`)).status).toBe(404)
     expect((await api(app, b.token, "POST", `/workouts/${w.id}/complete`, {})).status).toBe(404)
+  })
+})
+
+async function logExercise(token: string, workoutId: string, ex: WorkoutDto["exercises"][number], sets: { weightGrams: number | null; reps: number; rir: number | null }[]) {
+  const working = ex.sets.filter(s => s.setType === "working")
+  for (const [i, v] of sets.entries()) {
+    const s = working[i]
+    const res = await api(app, token, "PUT", `/workouts/${workoutId}/exercises/${ex.id}/sets`, {
+      clientId: s?.clientId ?? randomUUID(),
+      setNumber: s?.setNumber ?? i + 1,
+      setType: "working",
+      ...v,
+      completed: true,
+      completedAt: now(),
+      updatedAt: now(),
+    })
+    expect(res.status).toBe(200)
+  }
+}
+
+describe("progression targets at workout start (API-6)", () => {
+  it("prefills sets from nextTargets: no_data first, then increase_load / hold", async () => {
+    const u = await setupOnboardedUser(app, { weeklyFrequency: 3 })
+    const plan = (await api(app, u.token, "POST", "/plans/generate", {})).json as PlanDto
+    const session = plan.currentVersion.sessions[0]!
+    const pe = session.exercises[0]!
+
+    const w1 = (await api(app, u.token, "POST", "/workouts", { clientId: randomUUID(), source: { type: "plan_session", planSessionId: session.id } })).json as WorkoutDto
+    const e1 = w1.exercises[0]!
+    expect(e1.nextTarget?.kind).toBe("no_data")
+    expect(e1.nextTarget?.weightGrams).toBeNull()
+    expect(e1.nextTarget?.repsPerSet).toEqual(Array(pe.targetSets).fill(pe.targetRepsMin))
+    expect(e1.sets.filter(s => s.setType === "working").every(s => s.weightGrams === null && s.reps === pe.targetRepsMin)).toBe(true)
+    // Top of the rep range at the target RIR on every set → add load next time.
+    await logExercise(u.token, w1.id, e1, Array.from({ length: pe.targetSets }, () => ({ weightGrams: 60000, reps: pe.targetRepsMax, rir: pe.targetRir })))
+    await api(app, u.token, "POST", `/workouts/${w1.id}/complete`, {})
+
+    const w2 = (await api(app, u.token, "POST", "/workouts", { clientId: randomUUID(), source: { type: "plan_session", planSessionId: session.id } })).json as WorkoutDto
+    const e2 = w2.exercises[0]!
+    expect(e2.nextTarget?.kind).toBe("increase_load")
+    expect(e2.nextTarget!.weightGrams!).toBeGreaterThan(60000)
+    expect(e2.nextTarget!.lastWeightGrams).toBe(60000)
+    const working2 = e2.sets.filter(s => s.setType === "working")
+    expect(working2).toHaveLength(pe.targetSets)
+    expect(working2.every(s => s.targetWeightGrams === e2.nextTarget!.weightGrams && s.weightGrams === e2.nextTarget!.weightGrams && s.reps === pe.targetRepsMin)).toBe(true)
+    // The DTO still shows last time's values separately.
+    expect(e2.previous?.sets[0]?.weightGrams).toBe(60000)
+    // Missed the bottom of the range → hold the weight.
+    await logExercise(u.token, w2.id, e2, Array.from({ length: pe.targetSets }, () => ({ weightGrams: e2.nextTarget!.weightGrams, reps: Math.max(1, pe.targetRepsMin - 2), rir: 0 })))
+    await api(app, u.token, "POST", `/workouts/${w2.id}/complete`, {})
+    const w3 = (await api(app, u.token, "POST", "/workouts", { clientId: randomUUID(), source: { type: "plan_session", planSessionId: session.id } })).json as WorkoutDto
+    expect(w3.exercises[0]!.nextTarget?.kind).toBe("hold")
+    expect(w3.exercises[0]!.nextTarget?.weightGrams).toBe(e2.nextTarget!.weightGrams)
+  })
+
+  it("exercises added without a rep range keep the last-values prefill and have no nextTarget", async () => {
+    const u = await setupOnboardedUser(app)
+    const bench = await exerciseIdBySlug(app, u.token, "barbell-bench-press")
+    const w = (await api(app, u.token, "POST", "/workouts", { clientId: randomUUID(), source: { type: "empty" } })).json as WorkoutDto
+    const added = (await api(app, u.token, "POST", `/workouts/${w.id}/exercises`, { clientId: randomUUID(), exerciseId: bench })).json as WorkoutDto
+    expect(added.exercises[0]!.nextTarget).toBeNull()
+  })
+})
+
+describe("assisted exercises", () => {
+  it("never turns assistance into weight records, bests or tonnage", async () => {
+    const u = await setupOnboardedUser(app)
+    const assisted = await exerciseIdBySlug(app, u.token, "assisted-pull-up")
+    expect(await exerciseIdBySlug(app, u.token, "assisted-dip")).toBeTruthy()
+    const run = async (assistance: number, reps: number) => {
+      const w = (await api(app, u.token, "POST", "/workouts", { clientId: randomUUID(), source: { type: "empty" } })).json as WorkoutDto
+      const withEx = (await api(app, u.token, "POST", `/workouts/${w.id}/exercises`, { clientId: randomUUID(), exerciseId: assisted, targetSets: 3, targetRepsMin: 6, targetRepsMax: 10, targetRir: 2 })).json as WorkoutDto
+      const ex = withEx.exercises[0]!
+      await logExercise(u.token, w.id, ex, [0, 1, 2].map(() => ({ weightGrams: assistance, reps, rir: 2 })))
+      return { start: ex, summary: (await api(app, u.token, "POST", `/workouts/${w.id}/complete`, {})).json as WorkoutSummaryDto }
+    }
+    const first = await run(30000, 10)
+    expect(first.summary.records).toHaveLength(0)
+    expect(first.summary.tonnageGrams).toBe(0)
+    // More assistance is easier: never a max_weight record.
+    const second = await run(40000, 10)
+    expect(second.start.nextTarget?.kind).toBe("increase_load")
+    // Progression for assisted = less assistance.
+    expect(second.start.nextTarget!.weightGrams!).toBeLessThan(30000)
+    expect(second.summary.records.filter(r => r.type !== "max_reps_at_weight")).toHaveLength(0)
+    const prog = (await api(app, u.token, "GET", `/progress/exercises/${assisted}`)).json as ExerciseProgressDto
+    expect(prog.bests.maxWeightGrams).toBe(0)
+    expect(prog.bests.estimated1rmGrams).toBe(0)
+    expect(prog.points.every(p => p.tonnageGrams === 0 && p.estimated1rmGrams === null)).toBe(true)
+    // Top set for assisted = least assistance.
+    expect(prog.points[1]!.topWeightGrams).toBe(40000)
+    const overview = (await api(app, u.token, "GET", "/progress/overview")).json as ProgressOverviewDto
+    expect(overview.weeklyVolume.reduce((a, w) => a + w.tonnageGrams, 0)).toBe(0)
+  })
+})
+
+describe("regressions from simulator verification", () => {
+  // One user for both cases: the auth routes are rate limited to 10 registrations per minute.
+  let u: Awaited<ReturnType<typeof setupOnboardedUser>>
+  beforeAll(async () => {
+    u = await setupOnboardedUser(app)
+  })
+
+  it("assisted target keeps the logged assistance when some sets have no weight", async () => {
+    const assisted = await exerciseIdBySlug(app, u.token, "assisted-pull-up")
+    const addAssisted = async () => {
+      const w = (await api(app, u.token, "POST", "/workouts", { clientId: randomUUID(), source: { type: "empty" } })).json as WorkoutDto
+      return { w, ex: ((await api(app, u.token, "POST", `/workouts/${w.id}/exercises`, { clientId: randomUUID(), exerciseId: assisted, targetSets: 4, targetRepsMin: 6, targetRepsMax: 10, targetRir: 2 })).json as WorkoutDto).exercises[0]! }
+    }
+    const first = await addAssisted()
+    await logExercise(u.token, first.w.id, first.ex, [{ weightGrams: 2500, reps: 6, rir: 2 }, { weightGrams: null, reps: 6, rir: 2 }, { weightGrams: 40000, reps: 6, rir: 2 }, { weightGrams: null, reps: 6, rir: 2 }])
+    await api(app, u.token, "POST", `/workouts/${first.w.id}/complete`, {})
+    const second = await addAssisted()
+    expect(second.ex.nextTarget?.weightGrams).toBe(2500)
+    expect(second.ex.nextTarget?.lastWeightGrams).toBe(2500)
+    expect(second.ex.sets.filter(s => s.setType === "working").every(s => s.weightGrams === 2500 && s.targetWeightGrams === 2500)).toBe(true)
+    expect((await api(app, u.token, "POST", `/workouts/${second.w.id}/cancel`)).status).toBe(200)
+  })
+
+  it("weekly tonnage counts loaded sets and only drops assisted ones", async () => {
+    const bench = await exerciseIdBySlug(app, u.token, "barbell-bench-press")
+    const assisted = await exerciseIdBySlug(app, u.token, "assisted-pull-up")
+    const w = (await api(app, u.token, "POST", "/workouts", { clientId: randomUUID(), source: { type: "empty" } })).json as WorkoutDto
+    await api(app, u.token, "POST", `/workouts/${w.id}/exercises`, { clientId: randomUUID(), exerciseId: bench, targetSets: 2 })
+    const full = (await api(app, u.token, "POST", `/workouts/${w.id}/exercises`, { clientId: randomUUID(), exerciseId: assisted, targetSets: 2 })).json as WorkoutDto
+    await logExercise(u.token, w.id, full.exercises[0]!, [{ weightGrams: 60000, reps: 10, rir: 2 }, { weightGrams: 60000, reps: 10, rir: 2 }])
+    await logExercise(u.token, w.id, full.exercises[1]!, [{ weightGrams: 40000, reps: 8, rir: 2 }, { weightGrams: 40000, reps: 8, rir: 2 }])
+    const summary = (await api(app, u.token, "POST", `/workouts/${w.id}/complete`, {})).json as WorkoutSummaryDto
+    expect(summary.tonnageGrams).toBe(1_200_000)
+    const overview = (await api(app, u.token, "GET", "/progress/overview")).json as ProgressOverviewDto
+    expect(overview.weeklyVolume.at(-1)!.tonnageGrams).toBe(1_200_000)
+    expect(overview.lastWorkout!.tonnageGrams).toBe(1_200_000)
+    const history = (await api(app, u.token, "GET", "/workouts")).json as { items: { id: string; tonnageGrams: number }[] }
+    expect(history.items.find(i => i.id === w.id)!.tonnageGrams).toBe(1_200_000)
   })
 })

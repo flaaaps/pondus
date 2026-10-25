@@ -32,6 +32,16 @@ import {
   TRAINING_ENVIRONMENTS,
 } from "@pondus/shared"
 
+export type WorkoutNextTarget = {
+  kind: "increase_load" | "increase_reps" | "hold" | "deload" | "no_data"
+  weightGrams: number | null
+  repsPerSet: number[]
+  targetRir: number | null
+  lastWeightGrams: number | null
+  basedOn: string | null
+  reason: string
+}
+
 const tuple = <T extends readonly string[]>(v: T) => v as unknown as [T[number], ...T[number][]]
 
 export const goalEnum = pgEnum("goal", tuple(GOALS))
@@ -233,13 +243,15 @@ export const trainingPlanSessions = pgTable(
   {
     id,
     trainingPlanVersionId: uuid("training_plan_version_id").notNull().references(() => trainingPlanVersions.id, { onDelete: "cascade" }),
+    /** Stable identity of a session across plan versions (edits/adjustments carry it over). Overrides and workouts match on it. */
+    sessionKey: uuid("session_key").notNull().default(sql`gen_random_uuid()`),
     name: text("name").notNull(),
     sequence: integer("sequence").notNull(),
     weekday: smallint("weekday"),
     focusMuscles: muscleSlugEnum("focus_muscles").array().notNull().default(sql`'{}'::muscle_slug[]`),
     estimatedDurationMinutes: integer("estimated_duration_minutes").notNull().default(0),
   },
-  t => [index("plan_sessions_version_idx").on(t.trainingPlanVersionId)],
+  t => [index("plan_sessions_version_idx").on(t.trainingPlanVersionId), index("plan_sessions_key_idx").on(t.sessionKey)],
 )
 
 export const trainingPlanExercises = pgTable(
@@ -267,12 +279,18 @@ export const sessionOverrides = pgTable(
     id,
     userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
     trainingPlanSessionId: uuid("training_plan_session_id").notNull().references(() => trainingPlanSessions.id, { onDelete: "cascade" }),
+    /** Copy of training_plan_sessions.session_key so an override survives new plan versions. */
+    sessionKey: uuid("session_key").notNull(),
     weekStart: date("week_start").notNull(),
     status: sessionOverrideStatusEnum("status").notNull(),
     scheduledDate: date("scheduled_date"),
     ...timestamps,
   },
-  t => [uniqueIndex("session_overrides_unique_idx").on(t.trainingPlanSessionId, t.weekStart), index("session_overrides_user_week_idx").on(t.userId, t.weekStart)],
+  t => [
+    uniqueIndex("session_overrides_unique_idx").on(t.trainingPlanSessionId, t.weekStart),
+    uniqueIndex("session_overrides_key_week_idx").on(t.userId, t.sessionKey, t.weekStart),
+    index("session_overrides_user_week_idx").on(t.userId, t.weekStart),
+  ],
 )
 
 export const planAdjustmentPreviews = pgTable(
@@ -303,6 +321,8 @@ export const workouts = pgTable(
     trainingPlanId: uuid("training_plan_id").references(() => trainingPlans.id, { onDelete: "set null" }),
     trainingPlanVersionId: uuid("training_plan_version_id").references(() => trainingPlanVersions.id, { onDelete: "set null" }),
     sourceSessionId: uuid("source_session_id").references(() => trainingPlanSessions.id, { onDelete: "set null" }),
+    /** Stable session key of the source session (survives plan versions). */
+    sourceSessionKey: uuid("source_session_key"),
     startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
     completedAt: timestamp("completed_at", { withTimezone: true }),
     pausedAt: timestamp("paused_at", { withTimezone: true }),
@@ -315,6 +335,7 @@ export const workouts = pgTable(
     uniqueIndex("workouts_user_client_idx").on(t.userId, t.clientId),
     index("workouts_user_started_idx").on(t.userId, t.startedAt),
     index("workouts_user_status_idx").on(t.userId, t.status),
+    index("workouts_user_session_key_idx").on(t.userId, t.sourceSessionKey),
   ],
 )
 
@@ -332,6 +353,8 @@ export const workoutExercises = pgTable(
     targetRepsMax: integer("target_reps_max"),
     restSeconds: integer("rest_seconds"),
     targetRir: integer("target_rir"),
+    /** Progression targets computed at workout start (nextTargets): kind, reason, weight, reps per set … */
+    nextTarget: jsonb("next_target").$type<WorkoutNextTarget>(),
     skipped: boolean("skipped").notNull().default(false),
     notes: text("notes"),
     ...timestamps,

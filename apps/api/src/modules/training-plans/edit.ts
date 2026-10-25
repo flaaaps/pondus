@@ -1,5 +1,5 @@
 import type { PlanEditOp, PlanVersionDto, PlanSessionDto, PlanExerciseDto, ExerciseRef } from "@pondus/shared"
-import { DEFAULT_HEURISTICS, prescriptionCategory, type Goal } from "@pondus/shared"
+import { prescriptionForExercise, type ExperienceLevel, type Goal } from "@pondus/shared"
 import { badRequest, notFound } from "../../shared/errors.js"
 
 /**
@@ -13,6 +13,7 @@ export function applyEditOps(
   ops: PlanEditOp[],
   exercisesById: Map<string, ExerciseRef>,
   goal: Goal,
+  experience: ExperienceLevel,
 ): { version: PlanVersionDto; planName: string } {
   const v: PlanVersionDto = structuredClone(version)
   let name = planName
@@ -33,7 +34,7 @@ export function applyEditOps(
     if (!ref) throw badRequest("unknown_exercise", "Exercise does not exist or is not visible to you")
     return ref
   }
-  const defaultsFor = (ref: ExerciseRef) => DEFAULT_HEURISTICS.prescriptions[goal][prescriptionCategory(ref.category)]
+  const defaultsFor = (ref: ExerciseRef) => prescriptionForExercise(ref, goal, experience)
   const tmpId = () => `new-${Math.random().toString(36).slice(2)}`
 
   for (const op of ops) {

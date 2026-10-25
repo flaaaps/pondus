@@ -19,6 +19,8 @@ export const planExerciseDto = z.object({
 })
 export const planSessionDto = z.object({
   id: z.uuid(),
+  /** Stable across plan versions (id changes with every new version, sessionKey does not). */
+  sessionKey: z.uuid().optional(),
   name: z.string(),
   sequence: z.number().int(),
   weekday: z.number().int().min(0).max(6).nullable(),
@@ -130,6 +132,8 @@ export const applyPreviewBody = z.object({ previewId: z.uuid() })
 /** Calendar view of one week: template weekday + per-week overrides + linked workouts. */
 export const weekSessionDto = z.object({
   planSessionId: z.uuid(),
+  /** Stable across plan versions; overrides and workouts are matched on it. */
+  sessionKey: z.uuid().optional(),
   name: z.string(),
   sequence: z.number().int(),
   focusMuscles: z.array(z.string()),
@@ -148,13 +152,18 @@ export const planWeekDto = z.object({
   sessions: z.array(weekSessionDto),
   /** The session the user should do next (first not-completed by date, today or later; else first open). */
   nextSessionId: z.uuid().nullable(),
+  /** Today (YYYY-MM-DD) in the requested time zone (default Europe/Berlin). */
+  today: z.string().optional(),
+  /** Time zone used for weekStart/today. */
+  timeZone: z.string().optional(),
 })
 export type PlanWeekDto = z.infer<typeof planWeekDto>
 export type WeekSessionDto = z.infer<typeof weekSessionDto>
 
 export const weekQuery = z.object({
-  /** Any date inside the week (YYYY-MM-DD). Defaults to today (UTC). */
+  /** Any date inside the week (YYYY-MM-DD). Defaults to today in `timeZone`. */
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  /** IANA time zone used for "today" and the default week (default Europe/Berlin). */
   timeZone: z.string().max(64).optional(),
 })
 export const sessionOverrideBody = z.object({

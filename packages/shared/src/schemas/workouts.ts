@@ -35,6 +35,24 @@ export const workoutExerciseDto = z.object({
   targetRir: z.number().int().nullable(),
   skipped: z.boolean(),
   notes: z.string().nullable(),
+  /**
+   * Progression targets computed at workout start (domain `nextTargets`), null for exercises
+   * without a rep range (free/added without targets) or older workouts. Per-set targets are in
+   * `sets[].targetWeightGrams/targetReps` (working sets prefilled with them).
+   * For `assisted` exercises weights are assistance (lower = harder).
+   */
+  nextTarget: z
+    .object({
+      kind: z.enum(["increase_load", "increase_reps", "hold", "deload", "no_data"]),
+      weightGrams: z.number().int().nullable(),
+      repsPerSet: z.array(z.number().int()),
+      targetRir: z.number().int().nullable(),
+      lastWeightGrams: z.number().int().nullable(),
+      basedOn: z.string().nullable(),
+      reason: z.string(),
+    })
+    .nullable()
+    .optional(),
   sets: z.array(workoutSetDto),
   /** Last performance of this exercise before this workout (for prefill/comparison). */
   previous: z
@@ -52,6 +70,8 @@ export const workoutDto = z.object({
   trainingPlanId: z.uuid().nullable(),
   trainingPlanVersionId: z.uuid().nullable(),
   sourceSessionId: z.uuid().nullable(),
+  /** Stable key of the source plan session (survives plan versions). */
+  sourceSessionKey: z.uuid().nullable().optional(),
   startedAt: z.string(),
   completedAt: z.string().nullable(),
   pausedAt: z.string().nullable(),

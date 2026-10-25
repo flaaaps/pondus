@@ -14,9 +14,44 @@ type CreateBody = z.infer<typeof createCustomExerciseBody>
 type UpdateBody = z.infer<typeof updateCustomExerciseBody>
 type HistoryQuery = z.infer<typeof exerciseHistoryQuery>
 
-function matchesText(e: ExerciseWithMuscles, q: string) {
-  const needle = q.toLowerCase()
-  return e.nameDe.toLowerCase().includes(needle) || e.nameEn.toLowerCase().includes(needle) || e.aliases.some(a => a.toLowerCase().includes(needle)) || e.slug.includes(needle)
+/** Lowercase, fold umlauts/ß, turn hyphens and punctuation into spaces. Returns the "ae" and the stripped ("a") spelling. */
+export function normalizeSearch(text: string): [string, string] {
+  const base = text
+    .toLowerCase()
+    .replace(/ß/g, "ss")
+    .normalize("NFD")
+    .replace(/[^\p{L}\p{N}\u0308\s]+/gu, " ")
+  const expanded = base.replace(/([aou])\u0308/g, "$1e").replace(/\p{M}/gu, "")
+  const stripped = base.replace(/\p{M}/gu, "")
+  const tidy = (v: string) => v.replace(/\s+/g, " ").trim()
+  return [tidy(expanded), tidy(stripped)]
+}
+
+/** Haystack variants: both umlaut spellings, with and without spaces (so "tbar" finds "T-Bar"). */
+function searchForms(e: ExerciseWithMuscles): string[] {
+  return [e.nameDe, e.nameEn, e.slug, ...e.aliases].flatMap(field => {
+    const [a, b] = normalizeSearch(field)
+    return [a, b, a.replace(/ /g, ""), b.replace(/ /g, "")]
+  })
+}
+
+/** Every query token must occur in one of the haystack forms (any spelling). */
+export function matchesText(e: ExerciseWithMuscles, q: string) {
+  const [qa, qb] = normalizeSearch(q)
+  const tokensA = qa.split(" ").filter(Boolean)
+  const tokensB = qb.split(" ")
+  if (!tokensA.length) return true
+  const forms = searchForms(e)
+  return tokensA.every((t, i) => forms.some(f => f.includes(t) || f.includes(tokensB[i] ?? t)))
+}
+
+/** 0 = German name starts with the query, 1 = name contains it, 2 = matched elsewhere (aliases, English name). */
+function textRank(e: ExerciseWithMuscles, q: string) {
+  const [qa, qb] = normalizeSearch(q)
+  const names = [...normalizeSearch(e.nameDe)]
+  if (names.some(n => n.startsWith(qa) || n.startsWith(qb))) return 0
+  if (names.some(n => n.includes(qa) || n.includes(qb))) return 1
+  return 2
 }
 
 export function createExercisesService(db: Db) {
@@ -47,7 +82,8 @@ export function createExercisesService(db: Db) {
       let items = rows
       if (query.q) items = items.filter(e => matchesText(e, query.q!))
       if (query.muscles?.length) items = items.filter(e => e.primaryMuscles.some(m => query.muscles!.includes(m)) || e.secondaryMuscles.some(m => query.muscles!.includes(m)))
-      if (query.equipment?.length) items = items.filter(e => e.equipment.every(eq => query.equipment!.includes(eq)))
+      // OR semantics: an exercise matches if it uses any of the selected equipment.
+      if (query.equipment?.length) items = items.filter(e => e.equipment.some(eq => query.equipment!.includes(eq)))
       if (query.category?.length) items = items.filter(e => query.category!.includes(e.category))
       if (query.difficulty?.length) items = items.filter(e => query.difficulty!.includes(e.difficulty))
       if (query.unilateral) items = items.filter(e => e.isUnilateral === (query.unilateral === "true"))
@@ -58,7 +94,9 @@ export function createExercisesService(db: Db) {
       else {
         // Primary-muscle hits rank above secondary ones when filtering by muscle.
         const primaryHit = (e: ExerciseWithMuscles) => (query.muscles?.length && e.primaryMuscles.some(m => query.muscles!.includes(m)) ? 0 : 1)
-        items.sort((a, b) => primaryHit(a) - primaryHit(b) || a.nameDe.localeCompare(b.nameDe, "de"))
+        // With a text query, name-prefix hits come first.
+        const rank = (e: ExerciseWithMuscles) => (query.q ? textRank(e, query.q) : 0)
+        items.sort((a, b) => primaryHit(a) - primaryHit(b) || rank(a) - rank(b) || a.nameDe.localeCompare(b.nameDe, "de"))
       }
       const offset = decodeCursor<{ offset: number }>(query.cursor)?.offset ?? 0
       const page = items.slice(offset, offset + query.limit)

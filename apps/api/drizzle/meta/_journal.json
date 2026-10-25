@@ -8,6 +8,20 @@
       "when": 1792916471317,
       "tag": "0000_init",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1792930723329,
+      "tag": "0001_session_keys",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792931664512,
+      "tag": "0002_assisted_load_type",
+      "breakpoints": true
     }
   ]
 }

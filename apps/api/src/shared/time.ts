@@ -14,3 +14,21 @@ export function addDaysISO(iso: string, days: number): string {
   return d.toISOString().slice(0, 10)
 }
 export const toIso = (d: Date | null | undefined) => (d ? d.toISOString() : null)
+
+export const DEFAULT_TIME_ZONE = "Europe/Berlin"
+
+/** A valid IANA zone, falling back to Europe/Berlin for missing or unknown values. */
+export function resolveTimeZone(timeZone: string | undefined | null): string {
+  if (!timeZone) return DEFAULT_TIME_ZONE
+  try {
+    new Intl.DateTimeFormat("en-CA", { timeZone })
+    return timeZone
+  } catch {
+    return DEFAULT_TIME_ZONE
+  }
+}
+
+/** Calendar date (YYYY-MM-DD) of `d` in the given time zone. */
+export function localDateISO(d: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(d)
+}

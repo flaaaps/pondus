@@ -2,9 +2,12 @@ import { and, asc, desc, eq, gte, inArray, ne, sql } from "drizzle-orm"
 import type { Db } from "../../db/client.js"
 import { exerciseBests, exerciseMuscles, exercises, muscleGroups, personalRecords, trainingPlans, trainingPlanVersions, workoutExercises, workoutSets, workouts } from "../../db/schema.js"
 import { notFound } from "../../shared/errors.js"
-import { addDaysISO, weekStartISO } from "../../shared/time.js"
+import { addDaysISO, resolveTimeZone, weekStartISO } from "../../shared/time.js"
 import { decodeCursor, encodeCursor } from "../../shared/pagination.js"
-import { DEFAULT_INCREMENT_GRAMS, estimateOneRepMaxGrams, recommendProgression, type ExerciseProgressDto, type PerformanceSnapshot, type ProgressOverviewDto } from "@pondus/shared"
+import { estimateSetOneRepMaxGrams, incrementForExercise, recommendProgression, tonnageGrams, type ExerciseProgressDto, type LoadType, type PerformanceSnapshot, type ProgressOverviewDto } from "@pondus/shared"
+
+/** No body weight is stored yet, so assisted sets have no effective load (e1RM/tonnage null/0). */
+const BODYWEIGHT_GRAMS: number | null = null
 
 const RANGE_DAYS: Record<string, number | null> = { "4w": 28, "8w": 56, "12w": 84, "6m": 183, "1y": 365, all: null }
 
@@ -15,7 +18,8 @@ export function createProgressService(db: Db) {
   }
 
   return {
-    async overview(userId: string, range: string, timeZone = "UTC"): Promise<ProgressOverviewDto> {
+    async overview(userId: string, range: string, timeZoneInput?: string): Promise<ProgressOverviewDto> {
+      const timeZone = resolveTimeZone(timeZoneInput)
       const since = sinceFor(range)
       const rows = await db
         .select({
@@ -24,11 +28,13 @@ export function createProgressService(db: Db) {
           completedAt: workouts.completedAt,
           durationSeconds: workouts.durationSeconds,
           workingSets: sql<number>`count(*) filter (where ${workoutSets.completed} and ${workoutSets.setType} <> 'warmup')::int`,
-          tonnage: sql<number>`coalesce(sum(case when ${workoutSets.completed} and ${workoutSets.setType} <> 'warmup' then coalesce(${workoutSets.weightGrams},0) * coalesce(${workoutSets.reps},0) else 0 end), 0)::bigint`,
+          // Assisted sets log assistance, not load → excluded from tonnage.
+          tonnage: sql<number>`coalesce(sum(case when ${workoutSets.completed} and ${workoutSets.setType} <> 'warmup' and coalesce(${exercises.loadType}::text, '') <> 'assisted' then coalesce(${workoutSets.weightGrams},0) * coalesce(${workoutSets.reps},0) else 0 end), 0)::bigint`,
         })
         .from(workouts)
         .leftJoin(workoutExercises, and(eq(workoutExercises.workoutId, workouts.id), eq(workoutExercises.skipped, false)))
         .leftJoin(workoutSets, eq(workoutSets.workoutExerciseId, workoutExercises.id))
+        .leftJoin(exercises, eq(exercises.id, workoutExercises.exerciseId))
         .where(and(eq(workouts.userId, userId), eq(workouts.status, "completed"), since ? gte(workouts.completedAt, since) : undefined))
         .groupBy(workouts.id)
         .orderBy(desc(workouts.completedAt))
@@ -73,6 +79,25 @@ export function createProgressService(db: Db) {
       const dist = new Map<string, number>()
       for (const m of muscleRows) dist.set(m.slug, (dist.get(m.slug) ?? 0) + m.sets * (m.role === "primary" ? 1 : 0.5))
 
+      // This week's sets per muscle vs. the plan's weekly target (same weighting as the planner: secondary = 0.5).
+      const weekMuscleRows = await db
+        .select({ slug: muscleGroups.slug, role: exerciseMuscles.role, sets: sql<number>`count(*) filter (where ${workoutSets.completed} and ${workoutSets.setType} <> 'warmup')::int` })
+        .from(workoutSets)
+        .innerJoin(workoutExercises, eq(workoutExercises.id, workoutSets.workoutExerciseId))
+        .innerJoin(workouts, eq(workouts.id, workoutExercises.workoutId))
+        .innerJoin(exerciseMuscles, eq(exerciseMuscles.exerciseId, workoutExercises.exerciseId))
+        .innerJoin(muscleGroups, eq(muscleGroups.id, exerciseMuscles.muscleGroupId))
+        .where(and(eq(workouts.userId, userId), eq(workouts.status, "completed"), eq(workoutExercises.skipped, false), sql`${workouts.completedAt} >= (${thisWeek}::date::timestamp at time zone ${timeZone})`))
+        .groupBy(muscleGroups.slug, exerciseMuscles.role)
+      const weekActual = new Map<string, number>()
+      for (const m of weekMuscleRows) weekActual.set(m.slug, (weekActual.get(m.slug) ?? 0) + m.sets * (m.role === "primary" ? 1 : 0.5))
+      const groups = await db.select({ slug: muscleGroups.slug, nameDe: muscleGroups.nameDe, displayOrder: muscleGroups.displayOrder }).from(muscleGroups).orderBy(asc(muscleGroups.displayOrder))
+      const targets = (plan?.v.weeklySets ?? {}) as Record<string, number>
+      const round1 = (n: number) => Math.round(n * 10) / 10
+      const muscleWeeklySets = groups
+        .map(g => ({ muscle: g.slug as string, label: g.nameDe, actualSets: round1(weekActual.get(g.slug) ?? 0), targetSets: round1(targets[g.slug] ?? 0) }))
+        .filter(m => m.actualSets > 0 || m.targetSets > 0)
+
       const records = await db.select().from(personalRecords).where(eq(personalRecords.userId, userId)).orderBy(desc(personalRecords.achievedAt)).limit(8)
       const last = rows[0]
       const totalRows = await db.select({ total: sql<number>`count(*)::int` }).from(workouts).where(and(eq(workouts.userId, userId), eq(workouts.status, "completed")))
@@ -87,6 +112,7 @@ export function createProgressService(db: Db) {
         lastWorkout: last ? { id: last.id, name: last.name, completedAt: last.completedAt!.toISOString(), durationSeconds: last.durationSeconds, tonnageGrams: Number(last.tonnage), workingSets: last.workingSets } : null,
         recentRecords: records.map(r => ({ exerciseId: r.exerciseId, exerciseName: r.exerciseNameSnapshot, type: r.type, valueGrams: r.valueGrams === null ? null : Number(r.valueGrams), reps: r.reps, weightGrams: r.weightGrams, achievedAt: r.achievedAt.toISOString(), isEstimate: r.isEstimate })),
         weeklyVolume: weeks,
+        muscleWeeklySets,
         muscleDistribution: [...dist.entries()].map(([muscle, workingSets]) => ({ muscle, workingSets: Math.round(workingSets * 10) / 10 })).sort((a, b) => b.workingSets - a.workingSets),
       }
     },
@@ -95,6 +121,8 @@ export function createProgressService(db: Db) {
       const [ex] = await db.select().from(exercises).where(eq(exercises.id, exerciseId))
       if (!ex || (!ex.isSystem && ex.ownerUserId !== userId)) throw notFound("Exercise")
       const since = sinceFor(range)
+      const loadType = ex.loadType as LoadType
+      const assisted = loadType === "assisted"
       const perf = await db
         .select({ workoutId: workouts.id, completedAt: workouts.completedAt, workoutExerciseId: workoutExercises.id })
         .from(workoutExercises)
@@ -106,14 +134,15 @@ export function createProgressService(db: Db) {
         .map(p => {
           const s = sets.filter(x => x.workoutExerciseId === p.workoutExerciseId)
           if (!s.length) return null
-          const top = s.reduce((a, b) => ((b.weightGrams ?? 0) > (a.weightGrams ?? 0) ? b : a))
+          // Top set: heaviest load; for assisted exercises the least assistance.
+          const top = s.reduce((a, b) => (assisted ? (b.weightGrams ?? 0) < (a.weightGrams ?? 0) : (b.weightGrams ?? 0) > (a.weightGrams ?? 0)) ? b : a)
           return {
             workoutId: p.workoutId,
             performedAt: p.completedAt!.toISOString(),
             topWeightGrams: top.weightGrams ?? 0,
             topReps: top.reps ?? 0,
-            estimated1rmGrams: estimateOneRepMaxGrams(top.weightGrams ?? 0, top.reps ?? 0),
-            tonnageGrams: s.reduce((a, x) => a + (x.weightGrams ?? 0) * (x.reps ?? 0), 0),
+            estimated1rmGrams: estimateSetOneRepMaxGrams(top.weightGrams, top.reps, loadType, BODYWEIGHT_GRAMS),
+            tonnageGrams: tonnageGrams(s.map(x => ({ setType: x.setType, weightGrams: x.weightGrams, reps: x.reps, completed: x.completed, loadType })), { bodyweightGrams: BODYWEIGHT_GRAMS }),
             workingSets: s.length,
           }
         })
@@ -136,8 +165,7 @@ export function createProgressService(db: Db) {
           sets: recentSets.filter(s => s.workoutExerciseId === r.workoutExerciseId).map(s => ({ setType: s.setType, weightGrams: s.weightGrams, reps: s.reps, rir: s.rir, completed: s.completed })),
         }))
         const latest = recent[0]!
-        const increment = ex.loadType === "bodyweight" ? 0 : Math.max(...ex.equipment.map(e => DEFAULT_INCREMENT_GRAMS[e] ?? 2500).filter(v => v > 0), 0) || 2500
-        recommendation = recommendProgression({ repsMin: latest.repsMin ?? 8, repsMax: latest.repsMax ?? 12, targetRir: latest.rir, targetSets: latest.targetSets ?? 3 }, history, increment)
+        recommendation = recommendProgression({ repsMin: latest.repsMin ?? 8, repsMax: latest.repsMax ?? 12, targetRir: latest.rir, targetSets: latest.targetSets ?? 3 }, history, incrementForExercise({ loadType, equipment: ex.equipment }), { loadType })
       }
       return {
         exerciseId,

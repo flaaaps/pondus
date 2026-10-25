@@ -1,14 +1,15 @@
-import { and, asc, desc, eq, inArray, ne, sql } from "drizzle-orm"
+import { and, asc, desc, eq, gt, inArray, isNull, ne, or, sql } from "drizzle-orm"
 import type { z } from "zod"
-import type { Db } from "../../db/client.js"
+import type { Db, DbOrTx } from "../../db/client.js"
 import { planAdjustmentPreviews, sessionOverrides, trainingPlanExercises, trainingPlanSessions, trainingPlanVersions, trainingPlans, userTrainingProfiles, workouts } from "../../db/schema.js"
 import { badRequest, conflict, notFound } from "../../shared/errors.js"
-import { addDaysISO, weekStartISO } from "../../shared/time.js"
+import { addDaysISO, localDateISO, resolveTimeZone, weekStartISO } from "../../shared/time.js"
 import { loadExerciseRefs } from "../exercises/repo.js"
 import { loadTrainingProfile } from "../users/service.js"
 import { applyEditOps } from "./edit.js"
-import { loadPlanDto, loadVersionDto, persistVersion, versionToDraft } from "./persist.js"
+import { carriedSessionKeys, loadPlanDto, loadVersionDto, persistVersion, replaceVersionContent, sessionKeysBySequence, versionToDraft } from "./persist.js"
 import {
+  defaultPlanName,
   generatePlan,
   proposeAdjustedPlan,
   recomputePlan,
@@ -28,6 +29,8 @@ type PreviewBody = z.infer<typeof previewAdjustmentBody>
 type OverrideBody = z.infer<typeof sessionOverrideBody>
 
 const PREVIEW_TTL_MS = 30 * 60 * 1000
+/** Successive edits within this window update the version they just created instead of adding another one. */
+export const EDIT_COALESCE_WINDOW_MS = 120 * 1000
 
 export function createPlansService(db: Db) {
   async function ownedPlan(userId: string, planId: string) {
@@ -118,16 +121,27 @@ export function createPlansService(db: Db) {
       return loadPlanDto(db, userId, planId)
     },
 
-    /** Edits create a new immutable version; completed workouts keep pointing at the old one. */
+    /**
+     * Edits create a new version; completed workouts keep pointing at the old one.
+     * Sessions keep their sessionKey so this week's overrides and workouts still match.
+     * Rapid follow-up edits (same plan, within EDIT_COALESCE_WINDOW_MS of the version an
+     * edit created, nothing linked to it yet) update that version in place, keeping its
+     * session ids, instead of producing v3, v4, v5 … within minutes.
+     */
     async edit(userId: string, planId: string, ops: PlanEditOp[]) {
-      const plan = await ownedPlan(userId, planId)
-      const current = await loadVersionDto(db, planId, plan.currentVersionNumber)
+      await ownedPlan(userId, planId)
       const refs = await loadExerciseRefs(db, userId)
       const profile = await loadTrainingProfile(db, userId)
-      const { version, planName } = applyEditOps(current, plan.name, ops, new Map(refs.map(r => [r.id, r])), profile.primaryGoal)
-      const draft = recomputePlan(versionToDraft(planName, version), refs)
       await db.transaction(async tx => {
-        await persistVersion(tx, planId, plan.currentVersionNumber + 1, draft, "edited")
+        // Serialise concurrent edits of the same plan.
+        const [plan] = await tx.select().from(trainingPlans).where(and(eq(trainingPlans.id, planId), eq(trainingPlans.userId, userId))).for("update")
+        if (!plan) throw notFound("Plan")
+        const current = await loadVersionDto(tx, planId, plan.currentVersionNumber)
+        const { version, planName } = applyEditOps(current, plan.name, ops, new Map(refs.map(r => [r.id, r])), profile.primaryGoal, profile.experienceLevel)
+        const draft = recomputePlan(versionToDraft(planName, version), refs)
+        const keys = carriedSessionKeys(current, version.sessions)
+        if (await canCoalesceEdit(tx, planId, current.id, plan.currentVersionNumber)) await replaceVersionContent(tx, planId, current.id, draft, keys)
+        else await persistVersion(tx, planId, plan.currentVersionNumber + 1, draft, "edited", keys)
         if (planName !== plan.name) await tx.update(trainingPlans).set({ name: planName }).where(eq(trainingPlans.id, planId))
       })
       return loadPlanDto(db, userId, planId)
@@ -158,8 +172,13 @@ export function createPlansService(db: Db) {
       if (preview.expiresAt < new Date()) throw conflict("preview_expired", "This preview has expired, please create a new one")
       if (preview.baseVersionNumber !== plan.currentVersionNumber) throw conflict("plan_changed", "The plan changed since this preview was created")
       const proposal = preview.proposal as PlanDraft
+      const current = await loadVersionDto(db, planId, plan.currentVersionNumber)
+      // Keep an auto-generated name in sync with the new split/frequency; manual names stay.
+      const wasAutoNamed = plan.name === defaultPlanName(current.splitType, current.weeklyFrequency)
+      const newName = wasAutoNamed ? defaultPlanName(proposal.splitType, proposal.weeklyFrequency) : plan.name
       await db.transaction(async tx => {
-        await persistVersion(tx, planId, plan.currentVersionNumber + 1, proposal, "adjusted")
+        await persistVersion(tx, planId, plan.currentVersionNumber + 1, { ...proposal, name: newName }, "adjusted", sessionKeysBySequence(current))
+        if (newName !== plan.name) await tx.update(trainingPlans).set({ name: newName }).where(eq(trainingPlans.id, planId))
         await tx.update(planAdjustmentPreviews).set({ appliedAt: new Date() }).where(eq(planAdjustmentPreviews.id, preview.id))
         const patch = preview.profilePatch as Partial<{ weeklyFrequency: number; sessionDurationMinutes: number }>
         if (Object.keys(patch).length) await tx.update(userTrainingProfiles).set({ ...patch, updatedAt: new Date() }).where(eq(userTrainingProfiles.userId, userId))
@@ -171,35 +190,56 @@ export function createPlansService(db: Db) {
       await db.delete(planAdjustmentPreviews).where(and(eq(planAdjustmentPreviews.id, previewId), eq(planAdjustmentPreviews.userId, userId), eq(planAdjustmentPreviews.trainingPlanId, planId)))
     },
 
-    /** This week's sessions as concrete dates, including moves/skips and linked workouts. */
-    async week(userId: string, dateISO: string | undefined, timeZone = "UTC"): Promise<PlanWeekDto> {
-      const ref = dateISO ? new Date(`${dateISO}T12:00:00Z`) : new Date()
-      const weekStart = dateISO ? weekStartISO(ref, "UTC") : weekStartISO(ref, timeZone)
+    /**
+     * This week's sessions as concrete dates, including moves/skips and linked workouts.
+     * Overrides and workouts are matched by sessionKey, so they survive plan edits.
+     * "Today" and the default week come from `timeZone` (default Europe/Berlin).
+     */
+    async week(userId: string, dateISO: string | undefined, timeZoneInput?: string): Promise<PlanWeekDto> {
+      const timeZone = resolveTimeZone(timeZoneInput)
+      const now = new Date()
+      const todayISO = localDateISO(now, timeZone)
+      const weekStart = weekStartISO(new Date(`${dateISO ?? todayISO}T12:00:00Z`), "UTC")
       const weekEnd = addDaysISO(weekStart, 6)
       const plan = await activePlan(userId)
-      if (!plan) return { weekStart, weekEnd, planId: null, sessions: [], nextSessionId: null }
+      if (!plan) return { weekStart, weekEnd, planId: null, sessions: [], nextSessionId: null, today: todayISO, timeZone }
       const version = await loadVersionDto(db, plan.id, plan.currentVersionNumber)
-      const overrides = await db
-        .select()
-        .from(sessionOverrides)
-        .where(and(eq(sessionOverrides.userId, userId), eq(sessionOverrides.weekStart, weekStart), inArray(sessionOverrides.trainingPlanSessionId, version.sessions.map(s => s.id))))
-      const weekWorkouts = await db
-        .select()
-        .from(workouts)
-        .where(and(eq(workouts.userId, userId), ne(workouts.status, "cancelled"), sql`${workouts.startedAt} >= ${weekStart}::date`, sql`${workouts.startedAt} < (${weekEnd}::date + 1)`))
-        .orderBy(asc(workouts.startedAt))
-      const todayISO = new Date().toISOString().slice(0, 10)
+      const keys = version.sessions.map(s => s.sessionKey!).filter(Boolean)
+      const overrides = keys.length
+        ? await db
+            .select()
+            .from(sessionOverrides)
+            .where(and(eq(sessionOverrides.userId, userId), eq(sessionOverrides.weekStart, weekStart), inArray(sessionOverrides.sessionKey, keys)))
+        : []
+      // Week boundaries are local midnights in the user's zone.
+      const weekWorkouts = keys.length
+        ? await db
+            .select()
+            .from(workouts)
+            .where(
+              and(
+                eq(workouts.userId, userId),
+                ne(workouts.status, "cancelled"),
+                inArray(workouts.sourceSessionKey, keys),
+                sql`${workouts.startedAt} >= (${weekStart}::date::timestamp at time zone ${timeZone})`,
+                sql`${workouts.startedAt} < ((${weekEnd}::date + 1)::timestamp at time zone ${timeZone})`,
+              ),
+            )
+            .orderBy(asc(workouts.startedAt))
+        : []
       const sessions = version.sessions.map(s => {
-        const ov = overrides.find(o => o.trainingPlanSessionId === s.id)
+        const ov = overrides.find(o => o.sessionKey === s.sessionKey)
         // Template weekday → date within this Monday-based week.
         let date: string | null = null
         if (ov?.status === "skipped") date = null
         else if (ov?.status === "moved") date = ov.scheduledDate
         else if (s.weekday !== null) date = addDaysISO(weekStart, (s.weekday + 6) % 7)
-        const w = weekWorkouts.find(x => x.sourceSessionId === s.id)
+        const linked = weekWorkouts.filter(x => x.sourceSessionKey === s.sessionKey)
+        const w = linked.find(x => x.status === "completed") ?? linked[0]
         const status = w ? (w.status === "completed" ? "completed" : "in_progress") : ov?.status === "skipped" ? "skipped" : "planned"
         return {
           planSessionId: s.id,
+          sessionKey: s.sessionKey,
           name: s.name,
           sequence: s.sequence,
           focusMuscles: s.focusMuscles,
@@ -213,12 +253,12 @@ export function createPlansService(db: Db) {
       })
       const open = sessions.filter(s => s.status === "planned" || s.status === "in_progress")
       const upcoming = open.filter(s => s.date && s.date >= todayISO).sort((a, b) => a.date!.localeCompare(b.date!))
-      const next = sessions.find(s => s.status === "in_progress") ?? upcoming[0] ?? open.sort((a, b) => a.sequence - b.sequence)[0] ?? null
-      return { weekStart, weekEnd, planId: plan.id, sessions, nextSessionId: next?.planSessionId ?? null }
+      const next = sessions.find(s => s.status === "in_progress") ?? upcoming[0] ?? [...open].sort((a, b) => a.sequence - b.sequence)[0] ?? null
+      return { weekStart, weekEnd, planId: plan.id, sessions, nextSessionId: next?.planSessionId ?? null, today: todayISO, timeZone }
     },
 
     /** Move or skip one session in one week without touching the template. */
-    async overrideSession(userId: string, planSessionId: string, body: OverrideBody) {
+    async overrideSession(userId: string, planSessionId: string, body: OverrideBody, timeZone?: string) {
       const [row] = await db
         .select({ s: trainingPlanSessions, p: trainingPlans })
         .from(trainingPlanSessions)
@@ -226,14 +266,18 @@ export function createPlansService(db: Db) {
         .innerJoin(trainingPlans, eq(trainingPlans.id, trainingPlanVersions.trainingPlanId))
         .where(and(eq(trainingPlanSessions.id, planSessionId), eq(trainingPlans.userId, userId)))
       if (!row) throw notFound("Plan session")
+      const sessionKey = row.s.sessionKey
       if (body.action === "reset") {
-        await db.delete(sessionOverrides).where(and(eq(sessionOverrides.trainingPlanSessionId, planSessionId), eq(sessionOverrides.weekStart, body.weekStart)))
+        await db.delete(sessionOverrides).where(and(eq(sessionOverrides.userId, userId), eq(sessionOverrides.sessionKey, sessionKey), eq(sessionOverrides.weekStart, body.weekStart)))
       } else {
         if (body.action === "move" && !body.date) throw badRequest("date_required", "A date is required to move a session")
-        const values = { userId, trainingPlanSessionId: planSessionId, weekStart: body.weekStart, status: body.action === "move" ? ("moved" as const) : ("skipped" as const), scheduledDate: body.action === "move" ? body.date! : null, updatedAt: new Date() }
-        await db.insert(sessionOverrides).values(values).onConflictDoUpdate({ target: [sessionOverrides.trainingPlanSessionId, sessionOverrides.weekStart], set: { status: values.status, scheduledDate: values.scheduledDate, updatedAt: new Date() } })
+        const values = { userId, trainingPlanSessionId: planSessionId, sessionKey, weekStart: body.weekStart, status: body.action === "move" ? ("moved" as const) : ("skipped" as const), scheduledDate: body.action === "move" ? body.date! : null, updatedAt: new Date() }
+        await db
+          .insert(sessionOverrides)
+          .values(values)
+          .onConflictDoUpdate({ target: [sessionOverrides.userId, sessionOverrides.sessionKey, sessionOverrides.weekStart], set: { trainingPlanSessionId: planSessionId, status: values.status, scheduledDate: values.scheduledDate, updatedAt: new Date() } })
       }
-      return this.week(userId, body.weekStart)
+      return this.week(userId, body.weekStart, timeZone)
     },
 
     async sessionDetail(userId: string, planSessionId: string) {
@@ -250,6 +294,27 @@ export function createPlansService(db: Db) {
       return { planId: row.p.id, planName: row.p.name, versionNumber: row.v.versionNumber, session }
     },
   }
+}
+
+/**
+ * Coalesce into the current version only if an edit created it moments ago and
+ * nothing references it yet (no workouts, no pending adjustment preview based on it).
+ */
+async function canCoalesceEdit(tx: DbOrTx, planId: string, versionId: string, versionNumber: number): Promise<boolean> {
+  const [v] = await tx.select().from(trainingPlanVersions).where(eq(trainingPlanVersions.id, versionId))
+  if (!v || v.changeReason !== "edited" || Date.now() - v.createdAt.getTime() > EDIT_COALESCE_WINDOW_MS) return false
+  const [w] = await tx
+    .select({ id: workouts.id })
+    .from(workouts)
+    .where(or(eq(workouts.trainingPlanVersionId, versionId), inArray(workouts.sourceSessionId, tx.select({ id: trainingPlanSessions.id }).from(trainingPlanSessions).where(eq(trainingPlanSessions.trainingPlanVersionId, versionId)))))
+    .limit(1)
+  if (w) return false
+  const [p] = await tx
+    .select({ id: planAdjustmentPreviews.id })
+    .from(planAdjustmentPreviews)
+    .where(and(eq(planAdjustmentPreviews.trainingPlanId, planId), eq(planAdjustmentPreviews.baseVersionNumber, versionNumber), isNull(planAdjustmentPreviews.appliedAt), gt(planAdjustmentPreviews.expiresAt, new Date())))
+    .limit(1)
+  return !p
 }
 
 function proposalDto(p: PlanDraft, refs: { id: string; nameDe: string }[]): AdjustmentPreviewDto["proposal"] {
