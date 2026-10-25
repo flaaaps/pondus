@@ -1,13 +1,13 @@
 import { createActivityActionHandler, type ActivityActionDeps } from "../actions"
 
-function setup(p: Partial<{ activityId: string | null; shownRir: string | null; pendingRir: string | null; restRunning: boolean }> = {}) {
+function setup(p: Partial<{ activityId: string | null; shownRir: string | null; pendingRir: string | null; restRunning: boolean; restSet: boolean }> = {}) {
   const deps = {
     currentActivityId: () => (p.activityId === undefined ? "a1" : p.activityId),
     shownRirSetKey: () => p.shownRir ?? null,
     pendingRirSetKey: () => p.pendingRir ?? null,
-    restRunning: () => p.restRunning ?? true,
+    restRunning: () => p.restRunning ?? false,
+    restSet: () => p.restSet ?? p.restRunning ?? false,
     completeNextSet: jest.fn(),
-    adjustRest: jest.fn(),
     stopRest: jest.fn(),
     setRir: jest.fn(),
   } satisfies ActivityActionDeps
@@ -34,20 +34,25 @@ describe("activity actions", () => {
     expect(setup({ activityId: null }).handle(tap("complete-set"))).toBe("stale")
     expect(deps.completeNextSet).not.toHaveBeenCalled()
   })
-  it("adjusts and ends a running rest, every quick tap counts", () => {
-    const { deps, handle } = setup()
-    handle(tap("rest-minus-15", 10_000))
-    handle(tap("rest-minus-15", 10_200))
-    handle(tap("rest-plus-15", 10_300))
-    handle(tap("rest-done", 10_400))
-    expect(deps.adjustRest.mock.calls).toEqual([[-15], [-15], [15]])
+  it("does not tick off a set while a rest is running", () => {
+    const { deps, handle } = setup({ restRunning: true })
+    expect(handle(tap("complete-set"))).toBe("ignored")
+    expect(deps.completeNextSet).not.toHaveBeenCalled()
+  })
+  it("skips a running rest", () => {
+    const { deps, handle } = setup({ restRunning: true })
+    expect(handle(tap("rest-done"))).toBe("done")
     expect(deps.stopRest).toHaveBeenCalledTimes(1)
   })
-  it("leaves the rest alone when none is running", () => {
-    const { deps, handle } = setup({ restRunning: false })
-    expect(handle(tap("rest-plus-15"))).toBe("ignored")
+  it("also clears a rest that ran out before iOS marked the activity stale", () => {
+    const { deps, handle } = setup({ restRunning: false, restSet: true })
+    expect(handle(tap("rest-done"))).toBe("done")
+    expect(deps.stopRest).toHaveBeenCalledTimes(1)
+  })
+  it("has nothing to skip without a rest", () => {
+    const { deps, handle } = setup()
     expect(handle(tap("rest-done"))).toBe("ignored")
-    expect(deps.adjustRest).not.toHaveBeenCalled()
+    expect(handle(tap("rest-plus-15"))).toBe("ignored")
     expect(deps.stopRest).not.toHaveBeenCalled()
   })
   it("answers the RIR question that is shown, '4+' as 4", () => {

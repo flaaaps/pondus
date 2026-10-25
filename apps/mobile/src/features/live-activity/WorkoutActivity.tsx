@@ -44,7 +44,7 @@ export const workoutActivityLayout: LiveActivityComponent<WorkoutActivityProps> 
     )
 
   // Buttons (iOS 17+): their taps reach the app via addUserInteractionListener, see actions.ts.
-  // While a RIR question is open and the rest runs, the RIR row takes the place of the rest buttons.
+  // One action at a time: during a rest only "skip" (or the open RIR question), otherwise "Satz ✓".
   const small = [buttonStyle("bordered"), controlSize("small")]
   const buttonRow =
     props.status !== "running" && props.status !== "done" ? null : props.rirPrompt !== null && resting ? (
@@ -56,13 +56,10 @@ export const workoutActivityLayout: LiveActivityComponent<WorkoutActivityProps> 
         <Button target="rir-3" label="3" modifiers={[...small, accessibilityLabel("3 Wiederholungen in Reserve")]} />
         <Button target="rir-4" label="4+" modifiers={[...small, accessibilityLabel("4 oder mehr Wiederholungen in Reserve")]} />
       </HStack>
-    ) : props.canComplete || resting ? (
-      <HStack spacing={6}>
-        {props.canComplete ? <Button target="complete-set" label="Satz ✓" modifiers={[buttonStyle("borderedProminent"), controlSize("small"), tint(accent), accessibilityLabel("Satz abhaken")]} /> : null}
-        {resting ? <Button target="rest-minus-15" label="−15 s" modifiers={[...small, accessibilityLabel("Pause 15 Sekunden kürzer")]} /> : null}
-        {resting ? <Button target="rest-plus-15" label="+15 s" modifiers={[...small, accessibilityLabel("Pause 15 Sekunden länger")]} /> : null}
-        {resting ? <Button target="rest-done" label="Fertig" modifiers={[...small, accessibilityLabel("Pause beenden")]} /> : null}
-      </HStack>
+    ) : resting ? (
+      <Button target="rest-done" label="Pause überspringen" systemImage="forward.end.fill" modifiers={small} />
+    ) : props.canComplete ? (
+      <Button target="complete-set" label="Satz ✓" modifiers={[buttonStyle("borderedProminent"), controlSize("small"), tint(accent), accessibilityLabel("Satz abhaken")]} />
     ) : null
 
   return {

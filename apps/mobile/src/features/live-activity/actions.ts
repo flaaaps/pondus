@@ -1,5 +1,5 @@
 /** Button targets of the Live Activity (see WorkoutActivity.tsx). */
-export type ActivityTarget = "complete-set" | "rest-minus-15" | "rest-plus-15" | "rest-done" | "rir-0" | "rir-1" | "rir-2" | "rir-3" | "rir-4"
+export type ActivityTarget = "complete-set" | "rest-done" | "rir-0" | "rir-1" | "rir-2" | "rir-3" | "rir-4"
 
 export interface ActivityTap {
   /** Id of the activity that was tapped. */
@@ -15,9 +15,11 @@ export interface ActivityActionDeps {
   shownRirSetKey: () => string | null
   /** Set whose RIR question is open in the app. */
   pendingRirSetKey: () => string | null
+  /** A rest is counting down right now. */
   restRunning: () => boolean
+  /** A rest is set, possibly already run out while the app was suspended. */
+  restSet: () => boolean
   completeNextSet: () => void
-  adjustRest: (deltaSeconds: number) => void
   stopRest: () => void
   setRir: (setKey: string, rir: number) => void
 }
@@ -29,7 +31,7 @@ const REPEAT_WINDOW_MS = 1000
 
 /**
  * Maps a button tap to a store action. The activity then updates through the normal store
- * subscriptions. "±15 s" is not debounced: tapping it quickly several times is intended.
+ * subscriptions. During a rest the activity offers only "skip", a set is ticked off without one.
  */
 export function createActivityActionHandler(deps: ActivityActionDeps) {
   const lastTap = new Map<"complete" | "rir", number>()
@@ -44,16 +46,13 @@ export function createActivityActionHandler(deps: ActivityActionDeps) {
     const target = tap.target as ActivityTarget
     if (target === "complete-set") {
       if (isRepeat("complete", tap.timestamp)) return "repeat"
+      if (deps.restRunning()) return "ignored"
       deps.completeNextSet()
       return "done"
     }
-    if (target === "rest-minus-15" || target === "rest-plus-15") {
-      if (!deps.restRunning()) return "ignored"
-      deps.adjustRest(target === "rest-plus-15" ? 15 : -15)
-      return "done"
-    }
     if (target === "rest-done") {
-      if (!deps.restRunning()) return "ignored"
+      // Also clears a rest that has run out: iOS may mark the activity stale late, so the button can outlive the countdown.
+      if (!deps.restSet()) return "ignored"
       deps.stopRest()
       return "done"
     }

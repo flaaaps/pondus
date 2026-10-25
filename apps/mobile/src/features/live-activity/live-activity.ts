@@ -62,14 +62,14 @@ const handleTap = createActivityActionHandler({
   currentActivityId: () => controller?.activityId() ?? null,
   shownRirSetKey: () => controller?.shownProps()?.rirPrompt?.setKey ?? null,
   pendingRirSetKey: () => useActiveWorkoutStore.getState().rirPendingSetKey,
-  restRunning: () => useRestTimerStore.getState().endsAt !== null,
+  restRunning: () => (useRestTimerStore.getState().endsAt ?? 0) > Date.now(),
+  restSet: () => useRestTimerStore.getState().endsAt !== null,
   completeNextSet: () => {
     const { defaultRestSeconds } = useSettingsStore.getState()
     const done = useActiveWorkoutStore.getState().completeNextSet(useSessionStore.getState().api, { lookup: libraryLookup(), defaultRestSeconds, advanceFocus: true })
     // The editor may still point at the set just ticked off; let it fall back to the next open one.
     if (done) useWorkoutUiStore.getState().selectSet(null)
   },
-  adjustRest: delta => useRestTimerStore.getState().adjust(delta),
   stopRest: () => useRestTimerStore.getState().stop(),
   setRir: (setKey, rir) => useActiveWorkoutStore.getState().setRir(useSessionStore.getState().api, setKey, rir),
 })
