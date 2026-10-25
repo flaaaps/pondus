@@ -4,8 +4,15 @@ import { useRouter } from "expo-router"
 import type { PlanSessionDto, WorkoutDto } from "@pondus/shared"
 import { useActiveWorkoutStore } from "./active-workout-store"
 import { useApi } from "@/services/session-store"
+import { ApiError } from "@/lib/api-client"
 import { haptic } from "@/lib/haptics"
 import { errorMessage } from "@/lib/errors"
+
+const blockingWorkoutId = (err: unknown): string | null => {
+  if (!(err instanceof ApiError) || err.code !== "workout_already_active") return null
+  const id = (err.details as { workoutId?: unknown } | undefined)?.workoutId
+  return typeof id === "string" ? id : null
+}
 
 export function useStartWorkout() {
   const api = useApi()
@@ -19,15 +26,46 @@ export function useStartWorkout() {
     }
     return true
   }
+  const open = (w: WorkoutDto) => {
+    haptic("medium")
+    router.push(`/workout/${w.id}`)
+  }
+  /**
+   * The server still has an open workout this phone knows nothing about (signed out mid-session,
+   * other device): offer to continue it or to discard it and start the new one.
+   */
+  const resolveConflict = (workoutId: string, retry: () => Promise<void>) =>
+    Alert.alert("Auf dem Server läuft noch ein Workout", "Du kannst es hier fortsetzen oder verwerfen und das neue starten.", [
+      { text: "Abbrechen", style: "cancel" },
+      {
+        text: "Verwerfen",
+        style: "destructive",
+        onPress: () => {
+          void store
+            .discardRemote(api, workoutId)
+            .then(retry)
+            .catch(err => Alert.alert("Verwerfen nicht möglich", errorMessage(err)))
+        },
+      },
+      {
+        text: "Fortsetzen",
+        onPress: () => {
+          void store
+            .takeOverRemote(api, workoutId)
+            .then(open)
+            .catch(err => Alert.alert("Fortsetzen nicht möglich", errorMessage(err)))
+        },
+      },
+    ])
   const run = async (fn: () => Promise<WorkoutDto>) => {
     if (!guard()) return
     setStarting(true)
     try {
-      const w = await fn()
-      haptic("medium")
-      router.push(`/workout/${w.id}`)
+      open(await fn())
     } catch (err) {
-      Alert.alert("Start nicht möglich", errorMessage(err, "Unbekannter Fehler"))
+      const blocking = blockingWorkoutId(err)
+      if (blocking) resolveConflict(blocking, () => run(fn))
+      else Alert.alert("Start nicht möglich", errorMessage(err, "Unbekannter Fehler"))
     } finally {
       setStarting(false)
     }

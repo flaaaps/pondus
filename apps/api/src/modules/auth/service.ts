@@ -12,7 +12,15 @@ export interface AuthDeps {
   jwt: FastifyInstance["jwt"]
   refreshTtlDays: number
   accessTtlSeconds: number
+  /**
+   * A rotated-away refresh token may be presented again this long after rotation. Covers the
+   * client never receiving the rotation response (connection dropped, app suspended mid-request):
+   * without it the client is locked out with a token the server already revoked. Default 60 s.
+   */
+  refreshGraceMs?: number
 }
+
+export const DEFAULT_REFRESH_GRACE_MS = 60_000
 
 const hashToken = (token: string) => createHash("sha256").update(token).digest("hex")
 
@@ -29,16 +37,24 @@ export function toUserDto(u: typeof users.$inferSelect) {
 }
 
 export function createAuthService(deps: AuthDeps) {
+  const graceMs = deps.refreshGraceMs ?? DEFAULT_REFRESH_GRACE_MS
+
   async function issueTokens(userId: string, userAgent: string | undefined) {
     const accessToken = await deps.jwt.sign({ sub: userId, type: "access" })
     const refreshToken = randomBytes(48).toString("base64url")
     const refreshExpires = new Date(Date.now() + deps.refreshTtlDays * 86400 * 1000)
-    await deps.db.insert(refreshTokens).values({ userId, tokenHash: hashToken(refreshToken), expiresAt: refreshExpires, userAgent: userAgent?.slice(0, 200) ?? null })
+    const [row] = await deps.db
+      .insert(refreshTokens)
+      .values({ userId, tokenHash: hashToken(refreshToken), expiresAt: refreshExpires, userAgent: userAgent?.slice(0, 200) ?? null })
+      .returning({ id: refreshTokens.id })
     return {
-      accessToken,
-      accessTokenExpiresAt: new Date(Date.now() + deps.accessTtlSeconds * 1000).toISOString(),
-      refreshToken,
-      refreshTokenExpiresAt: refreshExpires.toISOString(),
+      id: row!.id,
+      tokens: {
+        accessToken,
+        accessTokenExpiresAt: new Date(Date.now() + deps.accessTtlSeconds * 1000).toISOString(),
+        refreshToken,
+        refreshTokenExpiresAt: refreshExpires.toISOString(),
+      },
     }
   }
 
@@ -53,7 +69,7 @@ export function createAuthService(deps: AuthDeps) {
         await tx.insert(userTrainingProfiles).values({ userId: u.id })
         return u
       })
-      return { user: toUserDto(user), tokens: await issueTokens(user.id, userAgent) }
+      return { user: toUserDto(user), tokens: (await issueTokens(user.id, userAgent)).tokens }
     },
 
     async login(input: { email: string; password: string }, userAgent?: string) {
@@ -61,18 +77,32 @@ export function createAuthService(deps: AuthDeps) {
       // Constant-ish time: verify against a dummy hash when the user does not exist.
       const ok = user ? await verify(user.passwordHash, input.password) : (await hash("dummy-password-for-timing"), false)
       if (!user || !ok) throw unauthorized("Invalid email or password")
-      return { user: toUserDto(user), tokens: await issueTokens(user.id, userAgent) }
+      return { user: toUserDto(user), tokens: (await issueTokens(user.id, userAgent)).tokens }
     },
 
     async refresh(refreshToken: string, userAgent?: string) {
       const tokenHash = hashToken(refreshToken)
       const [row] = await deps.db.select().from(refreshTokens).where(eq(refreshTokens.tokenHash, tokenHash))
-      if (!row || row.revokedAt || row.expiresAt < new Date()) throw unauthorized("Refresh token is invalid or expired")
+      const now = new Date()
+      if (!row || row.expiresAt < now) throw unauthorized("Refresh token is invalid or expired")
+      if (row.revokedAt) {
+        // Rotated away moments ago: the client most likely never saw the new pair. Retire that pair
+        // (if still unused) and hand out a fresh one, so exactly one chain tip stays valid.
+        const inGrace = row.replacedById && now.getTime() - row.revokedAt.getTime() <= graceMs
+        if (!inGrace) throw unauthorized("Refresh token is invalid or expired")
+        const [replacement] = await deps.db.select().from(refreshTokens).where(eq(refreshTokens.id, row.replacedById!))
+        if (!replacement || replacement.revokedAt) throw unauthorized("Refresh token is invalid or expired")
+        await deps.db.update(refreshTokens).set({ revokedAt: now }).where(eq(refreshTokens.id, replacement.id))
+      }
       const [user] = await deps.db.select().from(users).where(and(eq(users.id, row.userId), isNull(users.deletedAt)))
       if (!user) throw unauthorized("Account no longer exists")
-      // Rotate: revoke the old token, issue a new pair.
-      await deps.db.update(refreshTokens).set({ revokedAt: new Date() }).where(eq(refreshTokens.id, row.id))
-      return { user: toUserDto(user), tokens: await issueTokens(user.id, userAgent) }
+      // Rotate: issue a new pair and point the presented token at it; a revoked token keeps its original revocation time.
+      const issued = await issueTokens(user.id, userAgent)
+      await deps.db
+        .update(refreshTokens)
+        .set({ revokedAt: row.revokedAt ?? now, replacedById: issued.id })
+        .where(eq(refreshTokens.id, row.id))
+      return { user: toUserDto(user), tokens: issued.tokens }
     },
 
     async logout(userId: string, refreshToken?: string) {

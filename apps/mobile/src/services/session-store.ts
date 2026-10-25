@@ -5,11 +5,13 @@ import { createApiClient, type ApiClient, type TokenStore } from "@/lib/api-clie
 import { queryClient } from "@/lib/query-client"
 import { useActiveWorkoutStore } from "@/features/workout/active-workout-store"
 import { useWorkoutUiStore } from "@/features/workout/workout-ui-store"
-import { resetLocalDb } from "@/storage/db"
+import { kv, resetLocalDb } from "@/storage/db"
 import { useRestTimerStore } from "./rest-timer-store"
 
 const TOKEN_KEY = "pondus.tokens"
 const USER_KEY = "pondus.user"
+/** Account the local workout data (active workout, outbox, timer) belongs to. */
+const OWNER_KEY = "local_owner_user_id"
 
 /** Tokens live in the iOS Keychain via expo-secure-store; never in AsyncStorage. */
 const secureTokens: TokenStore = {
@@ -48,21 +50,35 @@ export const useSessionStore = create<SessionState>()((set, get) => {
       void finishSignOut(true)
     },
   })
-  const finishSignOut = async (expired: boolean) => {
-    await secureTokens.set(null)
-    await SecureStore.deleteItemAsync(USER_KEY)
-    queryClient.clear()
+  const wipeLocalData = () => {
     resetLocalDb()
     // The stores still hold the old account's workout in memory; without this it would be saved again for the next account.
     useRestTimerStore.getState().stop()
     useActiveWorkoutStore.getState().clearLocal()
     useWorkoutUiStore.getState().reset()
+  }
+  const finishSignOut = async (expired: boolean) => {
+    await api.setTokens(null)
+    await SecureStore.deleteItemAsync(USER_KEY)
+    queryClient.clear()
+    // A session the server ended (expired) keeps the unsynced workout on the phone: the same account
+    // will most likely sign in again in a moment and must not lose the sets logged so far. Someone
+    // else signing in wipes it (see `adopt`). A deliberate sign-out wipes right away.
+    if (!expired) wipeLocalData()
     set({ status: "signed_out", user: null, expired })
   }
+  const claimLocalData = (userId: string) => {
+    const owner = kv.get<string>(OWNER_KEY)
+    if (owner && owner !== userId) wipeLocalData()
+    kv.set(OWNER_KEY, userId)
+  }
   const adopt = async (res: AuthResponse) => {
-    await secureTokens.set(res.tokens)
+    await api.setTokens(res.tokens)
     await SecureStore.setItemAsync(USER_KEY, JSON.stringify(res.user))
+    claimLocalData(res.user.id)
     set({ status: "signed_in", user: res.user, expired: false })
+    // A workout still open on the server (signed out mid-session, new phone) continues where it was.
+    void useActiveWorkoutStore.getState().resumeRemote(api)
   }
   return {
     status: "booting",
@@ -70,7 +86,7 @@ export const useSessionStore = create<SessionState>()((set, get) => {
     api,
     expired: false,
     async restore() {
-      const tokens = await secureTokens.get()
+      const tokens = await api.getTokens()
       if (!tokens) return set({ status: "signed_out" })
       const cached = await SecureStore.getItemAsync(USER_KEY)
       // Optimistically restore from the cached user so the app opens instantly (offline too), then revalidate.
@@ -78,7 +94,9 @@ export const useSessionStore = create<SessionState>()((set, get) => {
       try {
         const user = await api.get<UserDto>("/api/v1/auth/me")
         await SecureStore.setItemAsync(USER_KEY, JSON.stringify(user))
+        claimLocalData(user.id)
         set({ status: "signed_in", user })
+        void useActiveWorkoutStore.getState().resumeRemote(api)
       } catch (err) {
         // Offline: keep the cached session. 401 is handled by onSessionExpired.
         if (!cached && get().status === "booting") set({ status: "signed_out" })
@@ -97,7 +115,7 @@ export const useSessionStore = create<SessionState>()((set, get) => {
       signingOut = true
       try {
         await queryClient.cancelQueries()
-        const tokens = await secureTokens.get()
+        const tokens = await api.getTokens()
         try {
           if (tokens) await api.post("/api/v1/auth/logout", { refreshToken: tokens.refreshToken })
         } catch {

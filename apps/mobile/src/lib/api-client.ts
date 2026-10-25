@@ -32,30 +32,61 @@ export interface ApiClientOptions {
  * Small fetch wrapper: JSON, Bearer auth, single-flight token refresh, and
  * normalised errors. Network failures become ApiError(status 0) so callers can
  * decide to queue work offline.
+ *
+ * The current token pair lives in memory and is mirrored to the TokenStore (Keychain).
+ * A rotation that reached us always wins, even if the Keychain write fails (seen
+ * while the app was woken in the background with the phone locked): the server has
+ * already revoked the old refresh token by then, so forgetting the new pair would
+ * log the user out mid-workout. Failed writes are retried on the next request.
  */
 export function createApiClient(opts: ApiClientOptions) {
   const base = opts.baseUrl ?? apiBaseUrl()
   const f = opts.fetchImpl ?? fetch
   let refreshing: Promise<TokenPair | null> | null = null
+  /** undefined = not read from the store yet. */
+  let cached: TokenPair | null | undefined
+  let unsaved = false
+
+  async function getTokens(): Promise<TokenPair | null> {
+    if (cached === undefined) {
+      try {
+        cached = await opts.tokens.get()
+      } catch {
+        cached = null
+      }
+    } else if (unsaved) await setTokens(cached)
+    return cached
+  }
+  async function setTokens(tokens: TokenPair | null) {
+    cached = tokens
+    try {
+      await opts.tokens.set(tokens)
+      unsaved = false
+    } catch {
+      unsaved = true
+    }
+  }
 
   async function refresh(): Promise<TokenPair | null> {
     if (!refreshing) {
       refreshing = (async () => {
-        const current = await opts.tokens.get()
+        const current = await getTokens()
         if (!current) return null
         try {
           const res = await f(`${base}/api/v1/auth/refresh`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ refreshToken: current.refreshToken }) })
           if (!res.ok) {
             if (res.status === 401) {
-              await opts.tokens.set(null)
+              await setTokens(null)
               opts.onSessionExpired()
             }
             return null
           }
           const json = (await res.json()) as { tokens: TokenPair }
-          await opts.tokens.set(json.tokens)
+          await setTokens(json.tokens)
           return json.tokens
         } catch {
+          // No answer (offline, dropped connection): keep the current pair. The server tolerates a
+          // retry with the old refresh token for a short grace window if the rotation did go through.
           return null
         } finally {
           refreshing = null
@@ -67,7 +98,7 @@ export function createApiClient(opts: ApiClientOptions) {
 
   async function request<T>(method: string, path: string, body?: unknown, init: { auth?: boolean; headers?: Record<string, string>; retry?: boolean } = {}): Promise<T> {
     const auth = init.auth ?? true
-    let tokens = auth ? await opts.tokens.get() : null
+    let tokens = auth ? await getTokens() : null
     if (auth && tokens && new Date(tokens.accessTokenExpiresAt).getTime() - Date.now() < 30_000) tokens = (await refresh()) ?? tokens
     const headers: Record<string, string> = { accept: "application/json", ...(body !== undefined ? { "content-type": "application/json" } : {}), ...(init.headers ?? {}) }
     if (auth && tokens) headers.authorization = `Bearer ${tokens.accessToken}`
@@ -80,7 +111,9 @@ export function createApiClient(opts: ApiClientOptions) {
     if (res.status === 401 && auth && init.retry !== false) {
       const fresh = await refresh()
       if (fresh) return request<T>(method, path, body, { ...init, retry: false })
-      opts.onSessionExpired()
+      // A rejected refresh token has already reported the expiry; a refresh lost to the network keeps the
+      // session. Only a request without any tokens is reported here.
+      if (!tokens) opts.onSessionExpired()
     }
     if (res.status === 204) return null as T
     const text = await res.text()
@@ -101,6 +134,10 @@ export function createApiClient(opts: ApiClientOptions) {
 
   return {
     baseUrl: base,
+    /** Current pair (memory first, store on first use). */
+    getTokens,
+    /** Adopt a pair from login/registration, or null on sign-out. Keeps the in-memory copy in step with the store. */
+    setTokens,
     get: <T>(path: string, init?: { auth?: boolean }) => request<T>("GET", path, undefined, init),
     post: <T>(path: string, body?: unknown, init?: { auth?: boolean; headers?: Record<string, string> }) => request<T>("POST", path, body ?? {}, init),
     put: <T>(path: string, body?: unknown) => request<T>("PUT", path, body ?? {}),

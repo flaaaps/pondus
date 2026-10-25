@@ -52,6 +52,15 @@ interface ActiveWorkoutState {
   setRir: (api: ApiClient, setKey: string, rir: number) => void
   pause: (api: ApiClient) => void
   resume: (api: ApiClient) => void
+  /**
+   * Picks up the workout still open on the server when nothing is active locally (after a re-login,
+   * on a new device). No-op offline or when a local workout exists. Returns the adopted workout.
+   */
+  resumeRemote: (api: ApiClient) => Promise<WorkoutDto | null>
+  /** Continues a specific server workout (from the "already active" conflict) in place of the local state. */
+  takeOverRemote: (api: ApiClient, workoutId: string) => Promise<WorkoutDto>
+  /** Cancels a server workout that blocks starting a new one, without touching local state. */
+  discardRemote: (api: ApiClient, workoutId: string) => Promise<void>
   complete: (api: ApiClient, notes?: string | null) => Promise<{ workout: WorkoutDto; serverId: string | null }>
   cancel: (api: ApiClient) => Promise<void>
   clearLocal: () => void
@@ -455,6 +464,30 @@ export const useActiveWorkoutStore = create<ActiveWorkoutState>()((set, get) => 
       set({ serverId: null })
       await get().flush(api)
       void queryClient.invalidateQueries({ queryKey: ["plans", "week"] })
+    },
+
+    async resumeRemote(api) {
+      if (get().workout) return null
+      try {
+        const dto = await api.get<WorkoutDto | null>("/api/v1/workouts/active")
+        // The user may have started something locally while the request was out.
+        if (!dto || get().workout) return null
+        adoptServer(dto)
+        return dto
+      } catch {
+        return null
+      }
+    },
+
+    async takeOverRemote(api, workoutId) {
+      const dto = await api.get<WorkoutDto>(`/api/v1/workouts/${workoutId}`)
+      adoptServer(dto)
+      return dto
+    },
+
+    async discardRemote(api, workoutId) {
+      await api.post(`/api/v1/workouts/${workoutId}/cancel`)
+      invalidateWorkoutViews()
     },
 
     clearLocal() {

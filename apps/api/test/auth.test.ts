@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { api, createTestApp, registerUser } from "./helpers.js"
 import type { App } from "../src/app.js"
@@ -19,14 +20,38 @@ describe("auth", () => {
 
     const refresh = await app.inject({ method: "POST", url: "/api/v1/auth/refresh", payload: { refreshToken: u.refreshToken } })
     expect(refresh.statusCode).toBe(200)
-    // Rotation: the old refresh token is now dead.
-    const reuse = await app.inject({ method: "POST", url: "/api/v1/auth/refresh", payload: { refreshToken: u.refreshToken } })
-    expect(reuse.statusCode).toBe(401)
+    const second = refresh.json().tokens.refreshToken as string
 
-    const logout = await api(app, u.token, "POST", "/auth/logout", { refreshToken: refresh.json().tokens.refreshToken })
+    // The client never saw that response (connection dropped): presenting the old token again within the
+    // grace window hands out a new pair and retires the one it missed, so exactly one token stays valid.
+    const retry = await app.inject({ method: "POST", url: "/api/v1/auth/refresh", payload: { refreshToken: u.refreshToken } })
+    expect(retry.statusCode).toBe(200)
+    const third = retry.json().tokens.refreshToken as string
+    const missed = await app.inject({ method: "POST", url: "/api/v1/auth/refresh", payload: { refreshToken: second } })
+    expect(missed.statusCode).toBe(401)
+    // The retired pair cannot be revived through the grace window either (its replacement was never issued).
+    const missedAgain = await app.inject({ method: "POST", url: "/api/v1/auth/refresh", payload: { refreshToken: second } })
+    expect(missedAgain.statusCode).toBe(401)
+
+    const logout = await api(app, u.token, "POST", "/auth/logout", { refreshToken: third })
     expect(logout.status).toBe(204)
-    const afterLogout = await app.inject({ method: "POST", url: "/api/v1/auth/refresh", payload: { refreshToken: refresh.json().tokens.refreshToken } })
+    const afterLogout = await app.inject({ method: "POST", url: "/api/v1/auth/refresh", payload: { refreshToken: third } })
     expect(afterLogout.statusCode).toBe(401)
+    // A logged-out token has no replacement, so the grace window does not apply.
+    const oldAfterLogout = await app.inject({ method: "POST", url: "/api/v1/auth/refresh", payload: { refreshToken: u.refreshToken } })
+    expect(oldAfterLogout.statusCode).toBe(401)
+  })
+
+  it("rejects a rotated-away refresh token once the grace window has passed", async () => {
+    const u = await registerUser(app)
+    const refresh = await app.inject({ method: "POST", url: "/api/v1/auth/refresh", payload: { refreshToken: u.refreshToken } })
+    expect(refresh.statusCode).toBe(200)
+    // Age the rotation beyond the window instead of waiting for it.
+    await app.db.execute(sql`update refresh_tokens set revoked_at = now() - interval '10 minutes' where revoked_at is not null`)
+    const late = await app.inject({ method: "POST", url: "/api/v1/auth/refresh", payload: { refreshToken: u.refreshToken } })
+    expect(late.statusCode).toBe(401)
+    const current = await app.inject({ method: "POST", url: "/api/v1/auth/refresh", payload: { refreshToken: refresh.json().tokens.refreshToken } })
+    expect(current.statusCode).toBe(200)
   })
 
   it("rejects duplicate emails, bad passwords and unauthenticated access", async () => {
