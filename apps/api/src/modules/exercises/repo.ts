@@ -1,6 +1,6 @@
 import { and, eq, inArray, isNull, or, sql } from "drizzle-orm"
 import type { DbOrTx } from "../../db/client.js"
-import { exerciseMuscles, exercises, muscleGroups, userExerciseFavorites, workoutExercises, workouts } from "../../db/schema.js"
+import { exerciseMuscles, exercises, muscleGroups, userExerciseFavorites, userExerciseNotes, workoutExercises, workouts } from "../../db/schema.js"
 import type { ExerciseDto, ExerciseRef, MuscleSlug } from "@pondus/shared"
 
 export type ExerciseRow = typeof exercises.$inferSelect
@@ -65,6 +65,16 @@ export async function favoriteIds(db: DbOrTx, userId: string): Promise<Set<strin
   return new Set(rows.map(r => r.id))
 }
 
+export type NoteMap = Map<string, { note: string | null; updatedAt: Date }>
+
+/** exerciseId → the user's lasting note (deleted notes stay as tombstones with `note = null`). */
+export async function noteMap(db: DbOrTx, userId: string, exerciseIds?: string[]): Promise<NoteMap> {
+  if (exerciseIds && !exerciseIds.length) return new Map()
+  const where = exerciseIds ? and(eq(userExerciseNotes.userId, userId), inArray(userExerciseNotes.exerciseId, exerciseIds)) : eq(userExerciseNotes.userId, userId)
+  const rows = await db.select({ exerciseId: userExerciseNotes.exerciseId, note: userExerciseNotes.note, updatedAt: userExerciseNotes.updatedAt }).from(userExerciseNotes).where(where)
+  return new Map(rows.map(r => [r.exerciseId, { note: r.note, updatedAt: r.updatedAt }]))
+}
+
 /** exerciseId → last completed workout time, for "recently used". */
 export async function lastUsedMap(db: DbOrTx, userId: string): Promise<Map<string, Date>> {
   const rows = await db
@@ -78,7 +88,8 @@ export async function lastUsedMap(db: DbOrTx, userId: string): Promise<Map<strin
   return map
 }
 
-export function toDto(e: ExerciseWithMuscles, favorites: Set<string>, lastUsed: Map<string, Date>): ExerciseDto {
+export function toDto(e: ExerciseWithMuscles, favorites: Set<string>, lastUsed: Map<string, Date>, notes: NoteMap): ExerciseDto {
+  const note = notes.get(e.id)
   return {
     id: e.id,
     slug: e.slug,
@@ -100,5 +111,7 @@ export function toDto(e: ExerciseWithMuscles, favorites: Set<string>, lastUsed: 
     isFavorite: favorites.has(e.id),
     lastUsedAt: lastUsed.get(e.id)?.toISOString() ?? null,
     setSeconds: e.setSeconds,
+    note: note?.note ?? null,
+    noteUpdatedAt: note?.updatedAt.toISOString() ?? null,
   }
 }

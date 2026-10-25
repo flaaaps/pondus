@@ -1,5 +1,5 @@
 import { create } from "zustand"
-import type { PlanSessionDto, SyncMutation, WorkoutDto, WorkoutExerciseDto, WorkoutSetDto, ExerciseDto } from "@pondus/shared"
+import { normalizeExerciseNote, type PlanSessionDto, type SyncMutation, type WorkoutDto, type WorkoutExerciseDto, type WorkoutSetDto, type ExerciseDto } from "@pondus/shared"
 import { ApiError, type ApiClient } from "@/lib/api-client"
 import { queryClient } from "@/lib/query-client"
 import { useRestTimerStore } from "@/services/rest-timer-store"
@@ -31,6 +31,8 @@ interface ActiveWorkoutState {
   repeatWorkout: (api: ApiClient, source: WorkoutDto) => Promise<WorkoutDto>
   dispatch: (api: ApiClient, m: SyncMutation, extra?: { exerciseName?: string }) => void
   flush: (api: ApiClient) => Promise<void>
+  /** Mutations still waiting in the outbox, oldest first. */
+  queuedMutations: () => SyncMutation[]
   /** Returns the new workout exercise's clientId (null without an active workout). */
   addExercise: (api: ApiClient, exercise: ExerciseDto, opts?: { replaces?: WorkoutExerciseDto; targetSets?: number; restSeconds?: number }) => string | null
   setRestSeconds: (api: ApiClient, exercise: WorkoutExerciseDto, seconds: number) => void
@@ -42,6 +44,8 @@ interface ActiveWorkoutState {
   addSet: (api: ApiClient, exercise: WorkoutExerciseDto) => void
   deleteSet: (api: ApiClient, set: WorkoutSetDto) => void
   skipExercise: (api: ApiClient, exercise: WorkoutExerciseDto, skipped: boolean) => void
+  /** Note for this exercise in this workout only (`workout_exercises.notes`); null/blank clears it. */
+  setWorkoutExerciseNote: (api: ApiClient, exercise: WorkoutExerciseDto, note: string | null) => void
   focusExercise: (key: string | null) => void
   setRirPending: (setKey: string | null) => void
   /** Ticks a set off with its effective values, starts the rest and asks for RIR. `advanceFocus` moves on to the next exercise right away. */
@@ -289,6 +293,8 @@ export const useActiveWorkoutStore = create<ActiveWorkoutState>()((set, get) => 
       set({ sync: box.size() ? "error" : "idle", pending: box.size(), lastSyncError: result.rejected[0]?.message ?? null })
     },
 
+    queuedMutations: () => getOutbox().peek().map(e => e.mutation),
+
     addExercise(api, exercise, opts) {
       const w = get().workout
       if (!w) return null
@@ -395,6 +401,10 @@ export const useActiveWorkoutStore = create<ActiveWorkoutState>()((set, get) => 
 
     skipExercise(api, exercise, skipped) {
       get().dispatch(api, { kind: "update_exercise", workoutClientId: workoutClientId(), exerciseClientId: exercise.clientId ?? exercise.id, body: { skipped } })
+    },
+
+    setWorkoutExerciseNote(api, exercise, note) {
+      get().dispatch(api, { kind: "update_exercise", workoutClientId: workoutClientId(), exerciseClientId: exercise.clientId ?? exercise.id, body: { notes: normalizeExerciseNote(note) } })
     },
 
     focusExercise(key) {

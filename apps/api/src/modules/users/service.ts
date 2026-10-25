@@ -1,4 +1,4 @@
-import { and, eq, inArray, sql } from "drizzle-orm"
+import { and, eq, inArray, isNotNull, sql } from "drizzle-orm"
 import type { ExercisePreferencesDto, TrainingProfileDto, UpdateTrainingProfileBody } from "./types.js"
 import type { Db, DbOrTx } from "../../db/client.js"
 import {
@@ -7,6 +7,7 @@ import {
   personalRecords,
   refreshTokens,
   trainingPlans,
+  userExerciseNotes,
   userExercisePreferences,
   userMusclePriorities,
   userTrainingProfiles,
@@ -132,9 +133,13 @@ export function createUsersService(db: Db) {
       const history = await db.query.workouts.findMany({ where: eq(workouts.userId, userId), with: { exercises: { with: { sets: true } } } })
       const records = await db.select().from(personalRecords).where(eq(personalRecords.userId, userId))
       const custom = await db.select().from(exercises).where(eq(exercises.ownerUserId, userId))
+      const exerciseNotes = await db
+        .select({ exerciseId: userExerciseNotes.exerciseId, note: userExerciseNotes.note, updatedAt: userExerciseNotes.updatedAt })
+        .from(userExerciseNotes)
+        .where(and(eq(userExerciseNotes.userId, userId), isNotNull(userExerciseNotes.note)))
       const { passwordHash: _omit, ...safeUser } = user
       void _omit
-      return { exportedAt: new Date().toISOString(), user: safeUser, profile, plans, workouts: history, personalRecords: records, customExercises: custom }
+      return { exportedAt: new Date().toISOString(), user: safeUser, profile, plans, workouts: history, personalRecords: records, customExercises: custom, exerciseNotes }
     },
 
     /** Hard delete: cascades remove every user-owned row. */

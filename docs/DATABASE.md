@@ -15,6 +15,7 @@ PostgreSQL ≥ 16, Drizzle ORM (`apps/api/src/db/schema.ts`), Migrationen in `ap
 | `exercise_alternatives` | kuratierte Alternativen | ergänzt die berechneten Alternativen |
 | `user_exercise_preferences` | bevorzugt/ausgeschlossen | PK (user, exercise) |
 | `user_exercise_favorites` | Favoriten | |
+| `user_exercise_notes` | dauerhafte Nutzer-Notiz je Übung (Sitz, Griff, Maschine) | PK (user, exercise), `note` (null = gelöscht, Tombstone), `updated_at` = Bearbeitungszeit des Clients (auf Serverzeit begrenzt) als Last-Writer-Wins-Schlüssel; Migration `0004` |
 | `user_muscle_priorities` | Fokusmuskeln | `priority` 1 = höchste |
 | `training_plans` | Plan-Kopf | `status` draft/active/archived, `current_version_number`, **partieller Unique-Index: ein aktiver Plan pro Nutzer** |
 | `training_plan_versions` | unveränderliche Versionen | Split, Frequenz, `weekly_sets` jsonb, `rationale` jsonb, `change_reason` generated/edited/adjusted |
@@ -30,6 +31,8 @@ PostgreSQL ≥ 16, Drizzle ORM (`apps/api/src/db/schema.ts`), Migrationen in `ap
 | `idempotency_keys` | HTTP-Idempotenz | (user, key), Request-Hash, gespeicherte Antwort, 48 h |
 
 ## Integrität und Löschstrategie
+
+- **Zwei Arten von Übungsnotizen:** `user_exercise_notes.note` gehört zur Übung des Nutzers und erscheint bei jedem künftigen Training („Notiz zu dieser Übung“); `workout_exercises.notes` gehört nur zu dieser Übung in einem Workout („Notiz zu diesem Workout“, im Verlauf sichtbar). Die dauerhafte Notiz liegt bewusst nicht in `user_exercise_preferences`: deren Zeilen ersetzt `PUT /me/exercise-preferences` vollständig (Löschen + Neuanlage), und `preference_type` ist Pflicht – eine Notiz ohne Präferenz passte nicht hinein und würde beim Speichern der Präferenzen verloren gehen. Gelöschte Notizen bleiben als Zeile mit `note = null` stehen, damit ein älterer Offline-Schreibvorgang sie nicht wiederbelebt.
 
 - Alle nutzerbezogenen Tabellen kaskadieren bei `users`-Löschung (Account-Löschung = ein `DELETE`).
 - Plan → Versionen → Einheiten → Übungen kaskadieren; `training_plan_exercises.exercise_id` ist `restrict`, eigene Übungen werden daher nur **soft** gelöscht und die API verweigert das Löschen, solange die Übung im aktiven Plan steckt.

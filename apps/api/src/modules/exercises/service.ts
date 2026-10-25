@@ -1,11 +1,11 @@
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm"
 import { randomUUID } from "node:crypto"
 import type { Db } from "../../db/client.js"
-import { exerciseAlternatives, exerciseMuscles, exercises, muscleGroups, userExerciseFavorites, workoutExercises, workoutSets, workouts } from "../../db/schema.js"
+import { exerciseAlternatives, exerciseMuscles, exercises, muscleGroups, userExerciseFavorites, userExerciseNotes, workoutExercises, workoutSets, workouts } from "../../db/schema.js"
 import { badRequest, forbidden, notFound } from "../../shared/errors.js"
 import { decodeCursor, encodeCursor } from "../../shared/pagination.js"
-import { attachMuscles, favoriteIds, lastUsedMap, loadExerciseRefs, toDto, toRef, visibleTo, type ExerciseWithMuscles } from "./repo.js"
-import { rankAlternatives, type ExerciseListQuery, type MuscleSlug } from "@pondus/shared"
+import { attachMuscles, favoriteIds, lastUsedMap, loadExerciseRefs, noteMap, toDto, toRef, visibleTo, type ExerciseWithMuscles } from "./repo.js"
+import { normalizeExerciseNote, rankAlternatives, type ExerciseListQuery, type MuscleSlug } from "@pondus/shared"
 import { loadTrainingProfile } from "../users/service.js"
 import type { z } from "zod"
 import type { createCustomExerciseBody, updateCustomExerciseBody, exerciseHistoryQuery } from "@pondus/shared"
@@ -79,6 +79,7 @@ export function createExercisesService(db: Db) {
       const rows = await attachMuscles(db, await db.select().from(exercises).where(visibleTo(userId)))
       const favorites = await favoriteIds(db, userId)
       const lastUsed = await lastUsedMap(db, userId)
+      const notes = await noteMap(db, userId)
       let items = rows
       if (query.q) items = items.filter(e => matchesText(e, query.q!))
       if (query.muscles?.length) items = items.filter(e => e.primaryMuscles.some(m => query.muscles!.includes(m)) || e.secondaryMuscles.some(m => query.muscles!.includes(m)))
@@ -100,12 +101,12 @@ export function createExercisesService(db: Db) {
       }
       const offset = decodeCursor<{ offset: number }>(query.cursor)?.offset ?? 0
       const page = items.slice(offset, offset + query.limit)
-      return { items: page.map(e => toDto(e, favorites, lastUsed)), nextCursor: offset + query.limit < items.length ? encodeCursor({ offset: offset + query.limit }) : null, total: items.length }
+      return { items: page.map(e => toDto(e, favorites, lastUsed, notes)), nextCursor: offset + query.limit < items.length ? encodeCursor({ offset: offset + query.limit }) : null, total: items.length }
     },
 
     async get(userId: string, id: string) {
       const e = await getVisible(userId, id)
-      return toDto(e, await favoriteIds(db, userId), await lastUsedMap(db, userId))
+      return toDto(e, await favoriteIds(db, userId), await lastUsedMap(db, userId), await noteMap(db, userId, [id]))
     },
 
     async alternatives(userId: string, id: string) {
@@ -129,7 +130,8 @@ export function createExercisesService(db: Db) {
       const byId = new Map(rows.map(r => [r.id, r]))
       const favorites = await favoriteIds(db, userId)
       const lastUsed = await lastUsedMap(db, userId)
-      return boosted.filter(b => byId.has(b.exercise.id)).map(b => ({ exercise: toDto(byId.get(b.exercise.id)!, favorites, lastUsed), score: b.score, reasons: b.reasons }))
+      const notes = await noteMap(db, userId, rows.map(r => r.id))
+      return boosted.filter(b => byId.has(b.exercise.id)).map(b => ({ exercise: toDto(byId.get(b.exercise.id)!, favorites, lastUsed, notes), score: b.score, reasons: b.reasons }))
     },
 
     async setFavorite(userId: string, id: string, favorite: boolean) {
@@ -137,6 +139,28 @@ export function createExercisesService(db: Db) {
       if (favorite) await db.insert(userExerciseFavorites).values({ userId, exerciseId: id }).onConflictDoNothing()
       else await db.delete(userExerciseFavorites).where(and(eq(userExerciseFavorites.userId, userId), eq(userExerciseFavorites.exerciseId, id)))
       return this.get(userId, id)
+    },
+
+    /**
+     * Sets or deletes (null/blank) the user's lasting note. Last writer wins on `updatedAt`
+     * (client edit time, clamped to now so a fast device clock cannot pin its note forever);
+     * an older write is ignored and reported as `applied: false`.
+     */
+    async setNote(userId: string, id: string, note: string | null, updatedAt?: string) {
+      await getVisible(userId, id)
+      const now = new Date()
+      const at = updatedAt ? new Date(Math.min(new Date(updatedAt).getTime(), now.getTime())) : now
+      const value = normalizeExerciseNote(note)
+      const written = await db
+        .insert(userExerciseNotes)
+        .values({ userId, exerciseId: id, note: value, updatedAt: at })
+        .onConflictDoUpdate({
+          target: [userExerciseNotes.userId, userExerciseNotes.exerciseId],
+          set: { note: value, updatedAt: at },
+          setWhere: sql`${userExerciseNotes.updatedAt} < ${at.toISOString()}`,
+        })
+        .returning({ exerciseId: userExerciseNotes.exerciseId })
+      return { applied: written.length > 0, exercise: await this.get(userId, id) }
     },
 
     async createCustom(userId: string, body: CreateBody) {

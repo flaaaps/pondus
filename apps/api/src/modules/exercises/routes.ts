@@ -1,4 +1,4 @@
-import { alternativeDto, createCustomExerciseBody, exerciseDto, exerciseHistoryQuery, exerciseListQuery, paginated, setType, updateCustomExerciseBody } from "@pondus/shared"
+import { alternativeDto, createCustomExerciseBody, exerciseDto, exerciseHistoryQuery, exerciseListQuery, paginated, setExerciseNoteBody, setType, updateCustomExerciseBody } from "@pondus/shared"
 import type { FastifyPluginAsyncZod } from "fastify-type-provider-zod"
 import { z } from "zod"
 import { createExercisesService } from "./service.js"
@@ -31,6 +31,10 @@ export const exerciseRoutes: FastifyPluginAsyncZod = async app => {
   )
   app.put("/:id/favorite", { schema: { tags: ["exercises"], params: idParams, response: { 200: exerciseDto } } }, async req => service.setFavorite(req.userId, req.params.id, true))
   app.delete("/:id/favorite", { schema: { tags: ["exercises"], params: idParams, response: { 200: exerciseDto } } }, async req => service.setFavorite(req.userId, req.params.id, false))
+  app.put("/:id/note", { schema: { tags: ["exercises"], params: idParams, body: setExerciseNoteBody, response: { 200: exerciseDto } } }, async req =>
+    (await service.setNote(req.userId, req.params.id, req.body.note, req.body.updatedAt)).exercise,
+  )
+  app.delete("/:id/note", { schema: { tags: ["exercises"], params: idParams, response: { 200: exerciseDto } } }, async req => (await service.setNote(req.userId, req.params.id, null)).exercise)
   app.get(
     "/:id/history",
     {

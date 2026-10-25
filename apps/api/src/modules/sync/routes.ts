@@ -1,6 +1,7 @@
 import { syncBody, syncResultDto, type SyncMutation, type WorkoutDto } from "@pondus/shared"
 import type { FastifyPluginAsyncZod } from "fastify-type-provider-zod"
 import { AppError } from "../../shared/errors.js"
+import { createExercisesService } from "../exercises/service.js"
 import { createWorkoutsService } from "../workouts/service.js"
 
 /**
@@ -11,6 +12,7 @@ import { createWorkoutsService } from "../workouts/service.js"
  */
 export const syncRoutes: FastifyPluginAsyncZod = async app => {
   const workoutsService = createWorkoutsService(app.db)
+  const exercisesService = createExercisesService(app.db)
 
   app.post("/workouts", { schema: { tags: ["sync"], body: syncBody, response: { 200: syncResultDto } } }, async req => {
     const userId = req.userId
@@ -88,6 +90,11 @@ export const syncRoutes: FastifyPluginAsyncZod = async app => {
           const w = await resolveWorkout(m.workoutClientId)
           if (w.status === "cancelled") return { status: "duplicate", workout: await workoutsService.toDto(w) }
           return { status: "applied", workout: await workoutsService.cancel(userId, w.id) }
+        }
+        case "set_exercise_note": {
+          // An older write than the stored one is acknowledged as duplicate (the newer note stays).
+          const { applied } = await exercisesService.setNote(userId, m.exerciseId, m.body.note, m.body.updatedAt)
+          return { status: applied ? "applied" : "duplicate", workout: null }
         }
       }
     }

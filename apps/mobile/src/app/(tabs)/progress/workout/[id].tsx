@@ -71,8 +71,8 @@ export default function WorkoutDetailScreen() {
                   </View>
                 ))}
                 {e.notes ? (
-                  <Text variant="footnote" color="tertiary">
-                    {e.notes}
+                  <Text variant="footnote" color="tertiary" accessibilityLabel={`Notiz zu diesem Workout: ${e.notes}`}>
+                    Notiz zu diesem Workout: {e.notes}
                   </Text>
                 ) : null}
               </Card>
