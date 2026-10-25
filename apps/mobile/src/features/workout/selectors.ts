@@ -122,6 +122,47 @@ export function targetBadge(t: WorkoutExerciseDto["nextTarget"], unit: WeightUni
 
 export const visibleExercises = (w: WorkoutDto) => w.exercises.filter(e => !e.skipped)
 
+/** The exercise in focus: the chosen one, else the first with open sets, else the first. Screen and Live Activity share this. */
+export function focusedExercise(w: WorkoutDto, focusedKey: string | null): WorkoutExerciseDto | null {
+  const visible = visibleExercises(w)
+  return visible.find(e => keyOf(e) === focusedKey) ?? visible.find(e => e.sets.some(s => !s.completed)) ?? visible[0] ?? null
+}
+
+/** What ticking off a set does; the store applies it, the screen adds haptics, toasts and the delayed advance. */
+export interface SetCompletion {
+  exercise: WorkoutExerciseDto
+  set: WorkoutSetDto
+  patch: Partial<WorkoutSetDto>
+  /** Rest to start in seconds; null for warm-ups. */
+  restSeconds: number | null
+  /** Ask how many reps were left (working sets, not to failure). */
+  asksRir: boolean
+  /** No open sets left in this exercise afterwards. */
+  exerciseFinished: boolean
+  /** Exercise to carry on with: the same one, the next with open sets, or null when everything is done. */
+  next: WorkoutExerciseDto | null
+}
+
+export function planCompletion(w: WorkoutDto, exerciseKey: string, setKey: string, lookup: LibraryLookup, defaultRestSeconds: number, at = new Date().toISOString()): SetCompletion | null {
+  const exercise = w.exercises.find(e => keyOf(e) === exerciseKey)
+  const set = exercise?.sets.find(s => keyOf(s) === setKey)
+  if (!exercise || !set || set.completed) return null
+  const patch = completionPatch(exercise, set, lookup, at)
+  const exerciseFinished = exercise.sets.every(s => s.completed || keyOf(s) === setKey)
+  // Look ahead with this set already done, so the last set of the last open exercise leads nowhere.
+  const after = visibleExercises(w).map(e => (e === exercise ? { ...e, sets: e.sets.map(s => (s === set ? { ...s, completed: true } : s)) } : e))
+  const next = exerciseFinished ? nextExerciseWithOpenSets(after, exerciseKey) : exercise
+  return {
+    exercise,
+    set,
+    patch,
+    restSeconds: isWarmup(set) ? null : (exercise.restSeconds ?? defaultRestSeconds),
+    asksRir: !isWarmup(set) && set.setType !== "failure",
+    exerciseFinished,
+    next: next ? (w.exercises.find(e => keyOf(e) === keyOf(next)) ?? null) : null,
+  }
+}
+
 export type ScreenState = "empty" | "paused" | "ready" | "editingDone" | "exerciseDone" | "workoutDone"
 
 /** What the focused screen shows, from the workout plus the focus/selection. */

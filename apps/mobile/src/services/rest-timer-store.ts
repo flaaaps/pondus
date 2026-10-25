@@ -1,7 +1,9 @@
 import * as Notifications from "expo-notifications"
 import { create } from "zustand"
 import { haptic } from "@/lib/haptics"
+import { restTimerStorage } from "@/storage/rest-timer"
 import { useSettingsStore } from "./settings-store"
+import { isRestTimerIdle, restoreRestTimer, toRestTimerSnapshot } from "./rest-timer-snapshot"
 
 interface RestTimerState {
   /** Wall-clock end time; survives app background and re-renders. */
@@ -10,6 +12,8 @@ interface RestTimerState {
   remainingWhenPaused: number | null
   notificationId: string | null
   label: string | null
+  /** Brings back a rest saved before the app was closed; an expired one is dropped. */
+  hydrate: () => void
   start: (seconds: number, label?: string) => void
   pause: () => void
   resume: () => void
@@ -58,6 +62,9 @@ export const useRestTimerStore = create<RestTimerState>()((set, get) => ({
   remainingWhenPaused: null,
   notificationId: null,
   label: null,
+  hydrate() {
+    set(restoreRestTimer(restTimerStorage.load(), Date.now()))
+  },
   start(seconds, label) {
     void cancel(get().notificationId)
     const endsAt = Date.now() + seconds * 1000
@@ -103,6 +110,13 @@ export const useRestTimerStore = create<RestTimerState>()((set, get) => ({
     return get().endsAt !== null
   },
 }))
+
+// Every change is saved, so the rest survives a restart (e.g. when a Live Activity button cold-starts the app).
+useRestTimerStore.subscribe(s => {
+  const snapshot = toRestTimerSnapshot(s)
+  if (isRestTimerIdle(snapshot)) restTimerStorage.clear()
+  else restTimerStorage.save(snapshot)
+})
 
 /** Called by the UI tick when the timer reaches zero while the app is foregrounded. */
 export function onRestTimerFinished() {

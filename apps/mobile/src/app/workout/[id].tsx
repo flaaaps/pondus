@@ -32,9 +32,9 @@ import { FirstTimeCard, IntroCard, RirCard } from "@/components/workout/ContextC
 import { useActiveWorkoutStore } from "@/features/workout/active-workout-store"
 import { useWorkoutUiStore } from "@/features/workout/workout-ui-store"
 import {
-  completionPatch,
   deriveScreenState,
   effectiveValues,
+  focusedExercise,
   formatKg,
   formatSet,
   isBodyweight,
@@ -122,7 +122,7 @@ export default function ActiveWorkoutScreen() {
     }
   }, [])
   // A new exercise in focus starts at the top; a running rest timer now leads into that exercise.
-  const focusedKey = ui.focusedExerciseKey ?? (workout ? keyOf(visibleExercises(workout).find(e => e.sets.some(s => !s.completed)) ?? workout) : null)
+  const focusedKey = workout ? keyOf(focusedExercise(workout, store.focusedExerciseKey) ?? workout) : null
   useEffect(() => {
     if (!focusedKey) return
     scrollRef.current?.scrollTo({ y: 0, animated: false })
@@ -156,11 +156,7 @@ export default function ActiveWorkoutScreen() {
 
   const visible = visibleExercises(workout)
   const skipped = workout.exercises.filter(e => e.skipped)
-  const focused =
-    visible.find(e => keyOf(e) === ui.focusedExerciseKey) ??
-    visible.find(e => e.sets.some(s => !s.completed)) ??
-    visible[0] ??
-    null
+  const focused = focusedExercise(workout, store.focusedExerciseKey)
   const focusedIndex = focused ? visible.indexOf(focused) : 0
   const selected = focused
     ? (focused.sets.find(s => keyOf(s) === ui.selectedSetKey) ?? nextOpenSet(focused))
@@ -235,20 +231,19 @@ export default function ActiveWorkoutScreen() {
 
   const completeSelected = () => {
     if (!focused || !selected) return
-    const ex = focused
-    const s = selected
-    const patch = completionPatch(ex, s, lookup)
-    store.upsertSet(api, ex, { ...patch, clientId: keyOf(s), setNumber: s.setNumber })
+    // The store logs the set, starts the rest and asks for RIR; the screen adds feedback and the delayed advance.
+    const done = store.completeSet(
+      api,
+      { exerciseKey: keyOf(focused), setKey: keyOf(selected) },
+      { lookup, defaultRestSeconds: defaultRest },
+    )
+    if (!done) return
+    const { exercise: ex, set: s, patch, next, exerciseFinished, restSeconds } = done
     haptic("success")
     setUpNextKey(null)
     // Carry on after this set (you may have started with a later one); null = first open set.
     const following = nextOpenSet(ex, s)
     ui.selectSet(following ? keyOf(following) : null)
-    const exerciseFinished = ex.sets.every(x => x.completed || keyOf(x) === keyOf(s))
-    const next = exerciseFinished ? nextExerciseWithOpenSets(visible, keyOf(ex)) : ex
-    const rest = ex.restSeconds ?? defaultRest
-    if (!isWarmup(s)) timer.start(rest, next?.exerciseNameSnapshot ?? undefined)
-    ui.setRirPending(!isWarmup(s) && s.setType !== "failure" ? keyOf(s) : null)
     if (exerciseFinished) {
       ui.showToast({
         kind: "exerciseDone",
@@ -272,7 +267,7 @@ export default function ActiveWorkoutScreen() {
       })
     const v = `${formatKg(patch.weightGrams ?? null, unit)} mal ${patch.reps ?? "–"}`
     AccessibilityInfo.announceForAccessibility(
-      `${setName(ex, s)} abgehakt, ${v}.${isWarmup(s) ? "" : ` Pause ${Math.round((rest / 60) * 10) / 10} Minuten.`}`,
+      `${setName(ex, s)} abgehakt, ${v}.${restSeconds === null ? "" : ` Pause ${Math.round((restSeconds / 60) * 10) / 10} Minuten.`}`,
     )
   }
   const undoComplete = (setKey: string, exerciseKey: string) => {
@@ -288,7 +283,7 @@ export default function ActiveWorkoutScreen() {
       setNumber: found.s.setNumber,
     })
     timer.stop()
-    ui.setRirPending(null)
+    store.setRirPending(null)
     ui.focusExercise(exerciseKey)
     ui.selectSet(setKey)
     haptic("light")
@@ -613,7 +608,7 @@ export default function ActiveWorkoutScreen() {
     </View>
   ) : null
 
-  const rirSet = ui.rirPendingSetKey ? findSet(ui.rirPendingSetKey) : null
+  const rirSet = store.rirPendingSetKey ? findSet(store.rirPendingSetKey) : null
   const volume = (sets: WorkoutSetDto[]) =>
     tonnageGrams(
       sets.map(s => ({
@@ -663,15 +658,8 @@ export default function ActiveWorkoutScreen() {
           <RirCard
             setName={setName(rirSet.ex, rirSet.s)}
             value={rirSet.s.rir}
-            onPick={rir => {
-              store.upsertSet(api, rirSet.ex, {
-                rir,
-                clientId: keyOf(rirSet.s),
-                setNumber: rirSet.s.setNumber,
-              })
-              ui.setRirPending(null)
-            }}
-            onDismiss={() => ui.setRirPending(null)}
+            onPick={rir => store.setRir(api, keyOf(rirSet.s), rir)}
+            onDismiss={() => store.setRirPending(null)}
           />
         ) : null}
         {state === "empty" || !focused ? (

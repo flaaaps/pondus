@@ -163,17 +163,17 @@ type WorkoutActivityProps = {
 
 Alle Strings sind fertig formatiert und auf Deutsch. Die Funktion ist rein und läuft ohne Native-Module, deshalb ist sie mit Jest vollständig testbar.
 
-### 4.2 „Aktuelle Übung“ muss in den Store
+### 4.2 „Aktuelle Übung“ muss in den Store ✅
 
-Heute liegt `focusIndex` als lokaler State in `app/workout/[id].tsx`, und die Logik „nächster offener Satz“ (`nextOpen`) und „Satz abhaken“ (`completeSet`) steckt im Screen. Die Live Activity und die Buttons brauchen beides ohne gemounteten Screen. Deshalb gibt es einen vorbereitenden Refactor:
+Die Live Activity und die Buttons brauchen Fokus, nächsten Satz und offene RIR-Abfrage ohne gemounteten Screen. Umgesetzt in Phase B (25.10.2026):
 
-1. **`focusedExerciseId` in den `active-workout-store`** verschieben und mit dem aktiven Workout persistieren. Der Screen liest und schreibt nur noch den Store.
-2. **`nextOpenSet(workout, focusedExerciseId)`** als reine Funktion nach `features/workout/`. Der Screen und `buildWorkoutActivityProps` nutzen dieselbe Funktion, damit Anzeige und Button immer denselben Satz meinen.
-3. **`completeNextSet(api, opts)`** als Store-Aktion. Sie übernimmt die heutige Logik aus `completeSet`: leere Werte aus dem vorherigen Satz oder den Vorwerten übernehmen, Pause starten, Fokus zur nächsten Übung verschieben. Die Aufwärm-Vorschläge brauchen die Übungsbibliothek. Die Aktion bekommt deshalb eine kleine Lookup-Funktion übergeben, und ohne Bibliothek fällt sie auf Vorwerte und Ziele zurück.
-4. **Offene RIR-Abfrage in den Store.** Heute liegt `rirSetId` als lokaler State im Screen. Er wird zu `rirPendingSetId` im `active-workout-store`, persistiert mit dem Workout. `completeNextSet` setzt ihn nach denselben Regeln wie heute (nicht bei Aufwärmsätzen und Sätzen bis zum Versagen). Eine neue Aktion `setRir(api, setId, rir)` speichert den Wert und löscht die Abfrage. So zeigen App und Live Activity immer dieselbe offene Abfrage, egal wo der Satz abgehakt wurde.
-5. **Pausentimer persistieren.** `endsAt`, `durationSeconds`, `remainingWhenPaused` und `label` kommen in die `kv`-Tabelle. Ein Kaltstart über einen Button oder nach einem Absturz findet die Pause sonst nicht mehr, während die Live Activity sie noch anzeigt.
+1. **Fokus und RIR-Abfrage im `active-workout-store`:** `focusedExerciseKey` und `rirPendingSetKey` werden mit dem Workout in `kv` gespeichert (`active_workout_focus`) und bei `hydrate()` wiederhergestellt. Ein anderes Workout beginnt mit leerem Fokus. Der `workout-ui-store` hält nur noch Auswahl, Entwurf und Toast.
+2. **`focusedExercise(workout, key)`** in `features/workout/selectors.ts`: die Übung im Fokus, sonst die erste mit offenen Sätzen. Screen, Übersicht und später `buildWorkoutActivityProps` nutzen dieselbe Funktion. Zusammen mit `nextOpenSet()` meinen Anzeige und Button so immer denselben Satz.
+3. **`planCompletion()`** (rein, getestet) entscheidet, was beim Abhaken passiert: Werte, Pause, RIR-Abfrage, nächste Übung. Die Store-Aktionen **`completeSet()`** und **`completeNextSet()`** wenden das an: Satz speichern, Pause starten, RIR-Abfrage setzen, optional sofort zur nächsten Übung wechseln (`advanceFocus`, für die Live Activity). Der Screen ergänzt Haptik, Toasts und den verzögerten Übungswechsel.
+4. **`setRir(api, setKey, rir)`** speichert den Wert und schließt die Abfrage für diesen Satz.
+5. **Pausentimer persistiert:** Jede Änderung landet in `kv` (`rest_timer`). `hydrate()` beim App-Start stellt die Pause wieder her und verwirft eine, die inzwischen abgelaufen ist.
 
-Dieser Refactor lohnt sich auch ohne Live Activity, weil er Logik aus einer 460-Zeilen-Komponente in testbare Funktionen zieht.
+Nebenbei korrigiert: Nach dem letzten offenen Satz des Workouts hielt die Suche nach der nächsten Übung den gerade abgehakten Satz noch für offen. Die Pause lief dann mit „Weiter mit <dieselbe Übung>“ als Benachrichtigungstext. `planCompletion()` schaut mit dem Satz als erledigt voraus und liefert dann `next = null`.
 
 ### 4.3 Controller
 
@@ -332,14 +332,8 @@ Der Spike liegt auf dem Branch `spike/live-activities` und kommt nicht nach `mai
 ### Phase A – Spike ✅ (25.10.2026)
 Ergebnisse in Abschnitt 7. Weg 1 ist bestätigt, das Layout aus Abschnitt 5 wurde auf das kompakte Banner umgestellt.
 
-### Phase B – Refactor des Workout-Zustands ⬜ (1 bis 1,5 Tage)
-- `focusedExerciseId` in den Store, persistiert.
-- `nextOpenSet()` als reine Funktion, Screen darauf umstellen.
-- `completeNextSet()` als Store-Aktion, Screen nutzt sie für den großen Button.
-- `rirPendingSetId` und `setRir()` in den Store, Screen zeigt die RIR-Abfrage daraus.
-- Pausentimer in `kv` persistieren und bei `hydrate()` wiederherstellen. Abgelaufene Pausen beim Laden verwerfen.
-- Jest-Tests für `nextOpenSet`, `completeNextSet` (Auto-Fill, Aufwärmsätze ohne Pause, Fokuswechsel, RIR-Abfrage nur bei Arbeitssätzen), `setRir` und die Timer-Persistenz.
-- Keine sichtbare Verhaltensänderung in der App.
+### Phase B – Refactor des Workout-Zustands ✅ (25.10.2026)
+Siehe 4.2. Jest-Tests für `focusedExercise`, `planCompletion` (Werte, Standardpause, Aufwärmsätze ohne Pause und RIR, kein RIR nach Satz bis Versagen, Wechsel zur nächsten Übung, Ende des Workouts) und `restoreRestTimer`. Im Simulator geprüft: Nach dem Beenden und Neustarten der App sind RIR-Abfrage und laufende Pause wieder da.
 
 ### Phase C – Live Activity, nur Anzeige ⬜ (2 bis 3 Tage)
 - `expo-widgets` und `@expo/ui` installieren (`~58.0.23`), Plugin konfigurieren, Prebuild prüfen, Metro mit `--clear` neu starten.

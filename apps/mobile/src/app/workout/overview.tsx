@@ -7,7 +7,7 @@ import { Button, Card, Text, useTheme } from "@/design-system"
 import { ExerciseThumbnail } from "@/components/ExerciseMedia"
 import { useActiveWorkoutStore } from "@/features/workout/active-workout-store"
 import { useWorkoutUiStore } from "@/features/workout/workout-ui-store"
-import { formatSet, isWarmup, keyOf, visibleExercises } from "@/features/workout/selectors"
+import { focusedExercise, formatSet, isWarmup, keyOf, visibleExercises } from "@/features/workout/selectors"
 import { useElapsed } from "@/features/workout/use-elapsed"
 import { useExercisePicker } from "@/features/exercises/picker-store"
 import { useAllExercises } from "@/features/exercises/queries"
@@ -34,7 +34,7 @@ export default function WorkoutOverviewSheet() {
 
   const visible = visibleExercises(workout)
   const skipped = workout.exercises.filter(e => e.skipped)
-  const focusedKey = ui.focusedExerciseKey ?? keyOf(visible.find(e => e.sets.some(s => !s.completed)) ?? visible[0] ?? workout)
+  const focusedKey = keyOf(focusedExercise(workout, store.focusedExerciseKey) ?? workout)
   const all = visible.flatMap(e => e.sets)
   const working = all.filter(s => !isWarmup(s))
   const volume = tonnageGrams(all.map(s => ({ setType: s.setType, weightGrams: s.weightGrams, reps: s.reps, completed: s.completed })))

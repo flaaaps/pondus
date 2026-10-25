@@ -2,10 +2,12 @@ import { create } from "zustand"
 import type { PlanSessionDto, SyncMutation, WorkoutDto, WorkoutExerciseDto, WorkoutSetDto, ExerciseDto } from "@pondus/shared"
 import { ApiError, type ApiClient } from "@/lib/api-client"
 import { queryClient } from "@/lib/query-client"
+import { useRestTimerStore } from "@/services/rest-timer-store"
 import { activeWorkoutStorage } from "@/storage/active-workout"
 import { applyLocalMutation, mergeLocalDrafts } from "@/storage/local-reducer"
 import { createOutbox, sqliteOutboxStorage, type Outbox } from "@/storage/outbox"
 import { uuid } from "@/lib/uuid"
+import { focusedExercise, keyOf, nextOpenSet, planCompletion, type LibraryLookup, type SetCompletion } from "./selectors"
 
 export type SyncStatus = "idle" | "syncing" | "offline" | "error"
 
@@ -17,6 +19,10 @@ interface ActiveWorkoutState {
   sync: SyncStatus
   lastSyncError: string | null
   rejected: string[]
+  /** Exercise in focus (`clientId ?? id`), persisted with the workout. Null = first exercise with open sets. */
+  focusedExerciseKey: string | null
+  /** Completed working set waiting for its RIR answer, persisted with the workout. */
+  rirPendingSetKey: string | null
   hydrated: boolean
   hydrate: () => void
   /** Start online from a plan session (rich prefill) with offline fallback. */
@@ -36,11 +42,25 @@ interface ActiveWorkoutState {
   addSet: (api: ApiClient, exercise: WorkoutExerciseDto) => void
   deleteSet: (api: ApiClient, set: WorkoutSetDto) => void
   skipExercise: (api: ApiClient, exercise: WorkoutExerciseDto, skipped: boolean) => void
+  focusExercise: (key: string | null) => void
+  setRirPending: (setKey: string | null) => void
+  /** Ticks a set off with its effective values, starts the rest and asks for RIR. `advanceFocus` moves on to the next exercise right away. */
+  completeSet: (api: ApiClient, target: { exerciseKey: string; setKey: string }, opts: CompleteOptions) => SetCompletion | null
+  /** Ticks off the next open set of the focused exercise, the one the screen and the Live Activity show. */
+  completeNextSet: (api: ApiClient, opts: CompleteOptions) => SetCompletion | null
+  /** Saves the RIR of a completed set and closes the RIR question for it. */
+  setRir: (api: ApiClient, setKey: string, rir: number) => void
   pause: (api: ApiClient) => void
   resume: (api: ApiClient) => void
   complete: (api: ApiClient, notes?: string | null) => Promise<{ workout: WorkoutDto; serverId: string | null }>
   cancel: (api: ApiClient) => Promise<void>
   clearLocal: () => void
+}
+
+export interface CompleteOptions {
+  lookup: LibraryLookup
+  defaultRestSeconds: number
+  advanceFocus?: boolean
 }
 
 let outbox: Outbox | null = null
@@ -120,9 +140,17 @@ function buildLocalFromSession(session: PlanSessionDto, exerciseNames: Record<st
 
 export const useActiveWorkoutStore = create<ActiveWorkoutState>()((set, get) => {
   const persist = (workout: WorkoutDto | null) => {
+    // Another workout (or none) starts with a fresh focus.
+    const prev = get().workout
+    if (!workout || !prev || keyOf(prev) !== keyOf(workout)) set({ focusedExerciseKey: null, rirPendingSetKey: null })
     if (workout) activeWorkoutStorage.save(workout)
     else activeWorkoutStorage.clear()
     set({ workout, pending: getOutbox().size() })
+  }
+  const persistFocus = (patch: Partial<Pick<ActiveWorkoutState, "focusedExerciseKey" | "rirPendingSetKey">>) => {
+    set(patch)
+    const { workout, focusedExerciseKey, rirPendingSetKey } = get()
+    if (workout) activeWorkoutStorage.saveFocus({ workoutKey: keyOf(workout), focusedExerciseKey, rirPendingSetKey })
   }
   const enqueue = (m: SyncMutation, extra?: { exerciseName?: string }) => {
     getOutbox().enqueue(extra?.exerciseName ? ({ ...m, exerciseName: extra.exerciseName } as unknown as SyncMutation) : m, uuid())
@@ -141,11 +169,22 @@ export const useActiveWorkoutStore = create<ActiveWorkoutState>()((set, get) => 
     sync: "idle",
     lastSyncError: null,
     rejected: [],
+    focusedExerciseKey: null,
+    rirPendingSetKey: null,
     hydrated: false,
 
     hydrate() {
       const w = activeWorkoutStorage.load()
-      set({ workout: w, serverId: w && w.clientId !== w.id ? w.id : null, pending: getOutbox().size(), hydrated: true })
+      const focus = activeWorkoutStorage.loadFocus()
+      const own = w && focus?.workoutKey === keyOf(w) ? focus : null
+      set({
+        workout: w,
+        serverId: w && w.clientId !== w.id ? w.id : null,
+        focusedExerciseKey: own?.focusedExerciseKey ?? null,
+        rirPendingSetKey: own?.rirPendingSetKey ?? null,
+        pending: getOutbox().size(),
+        hydrated: true,
+      })
     },
 
     async startFromSession(api, session, exerciseNames) {
@@ -347,6 +386,42 @@ export const useActiveWorkoutStore = create<ActiveWorkoutState>()((set, get) => 
 
     skipExercise(api, exercise, skipped) {
       get().dispatch(api, { kind: "update_exercise", workoutClientId: workoutClientId(), exerciseClientId: exercise.clientId ?? exercise.id, body: { skipped } })
+    },
+
+    focusExercise(key) {
+      persistFocus({ focusedExerciseKey: key })
+    },
+    setRirPending(setKey) {
+      persistFocus({ rirPendingSetKey: setKey })
+    },
+
+    completeSet(api, target, opts) {
+      const w = get().workout
+      if (!w) return null
+      const plan = planCompletion(w, target.exerciseKey, target.setKey, opts.lookup, opts.defaultRestSeconds)
+      if (!plan) return null
+      get().upsertSet(api, plan.exercise, { ...plan.patch, clientId: keyOf(plan.set), setNumber: plan.set.setNumber })
+      if (plan.restSeconds !== null) useRestTimerStore.getState().start(plan.restSeconds, plan.next?.exerciseNameSnapshot ?? undefined)
+      persistFocus({
+        rirPendingSetKey: plan.asksRir ? keyOf(plan.set) : null,
+        ...(opts.advanceFocus && plan.exerciseFinished && plan.next ? { focusedExerciseKey: keyOf(plan.next) } : {}),
+      })
+      return plan
+    },
+
+    completeNextSet(api, opts) {
+      const w = get().workout
+      const ex = w ? focusedExercise(w, get().focusedExerciseKey) : null
+      const s = ex ? nextOpenSet(ex) : null
+      return ex && s ? get().completeSet(api, { exerciseKey: keyOf(ex), setKey: keyOf(s) }, opts) : null
+    },
+
+    setRir(api, setKey, rir) {
+      const w = get().workout
+      const ex = w?.exercises.find(e => e.sets.some(s => keyOf(s) === setKey))
+      const s = ex?.sets.find(x => keyOf(x) === setKey)
+      if (ex && s) get().upsertSet(api, ex, { rir, clientId: setKey, setNumber: s.setNumber })
+      if (get().rirPendingSetKey === setKey) persistFocus({ rirPendingSetKey: null })
     },
 
     pause(api) {

@@ -1,5 +1,5 @@
 import type { WorkoutDto, WorkoutExerciseDto, WorkoutSetDto } from "@pondus/shared"
-import { completionPatch, deriveScreenState, effectiveValues, keyOf, nextExerciseWithOpenSets, numberFor, warmupSuggestion, type LibraryLookup } from "../selectors"
+import { completionPatch, deriveScreenState, effectiveValues, focusedExercise, keyOf, nextExerciseWithOpenSets, numberFor, planCompletion, warmupSuggestion, type LibraryLookup } from "../selectors"
 
 const lookup: LibraryLookup = () => ({ equipment: ["barbell"], loadType: "free_weight", slug: "barbell-bench-press" })
 
@@ -92,5 +92,76 @@ describe("deriveScreenState", () => {
     expect(deriveScreenState(w([finished, ex]), finished, null)).toBe("exerciseDone")
     expect(deriveScreenState(w([finished]), finished, null)).toBe("workoutDone")
     expect(deriveScreenState(w([]), null, null)).toBe("empty")
+  })
+})
+
+describe("focusedExercise", () => {
+  const w = (exercises: WorkoutExerciseDto[]) => ({ status: "in_progress", exercises }) as WorkoutDto
+  it("uses the chosen exercise, else the first with open sets, else the first", () => {
+    const done = exercise([set({ completed: true })])
+    const open = exercise([set()])
+    expect(focusedExercise(w([done, open]), keyOf(done))).toBe(done)
+    expect(focusedExercise(w([done, open]), null)).toBe(open)
+    expect(focusedExercise(w([done]), null)).toBe(done)
+    expect(focusedExercise(w([]), null)).toBeNull()
+  })
+  it("ignores a skipped exercise in focus", () => {
+    const skipped = exercise([set()], { skipped: true })
+    const open = exercise([set()])
+    expect(focusedExercise(w([skipped, open]), keyOf(skipped))).toBe(open)
+  })
+})
+
+describe("planCompletion", () => {
+  const w = (exercises: WorkoutExerciseDto[]) => ({ status: "in_progress", exercises }) as WorkoutDto
+  it("logs a working set with its effective values, rests and asks for RIR", () => {
+    const s1 = set({ weightGrams: 80000, reps: 8, completed: true })
+    const s2 = set({ reps: 8 })
+    const s3 = set({ reps: 8 })
+    const ex = exercise([s1, s2, s3], { restSeconds: 150 })
+    const plan = planCompletion(w([ex]), keyOf(ex), keyOf(s2), lookup, 90, "t")!
+    expect(plan.patch).toEqual({ completed: true, completedAt: "t", weightGrams: 80000, reps: 8 })
+    expect(plan.restSeconds).toBe(150)
+    expect(plan.asksRir).toBe(true)
+    expect(plan.exerciseFinished).toBe(false)
+    expect(plan.next).toBe(ex)
+  })
+  it("falls back to the default rest", () => {
+    const s1 = set()
+    const ex = exercise([s1, set()], { restSeconds: null })
+    expect(planCompletion(w([ex]), keyOf(ex), keyOf(s1), lookup, 90)!.restSeconds).toBe(90)
+  })
+  it("has no rest and no RIR question for warm-ups", () => {
+    const w1 = set({ setType: "warmup" })
+    const ex = exercise([w1, set({ weightGrams: 100000, reps: 5 })])
+    const plan = planCompletion(w([ex]), keyOf(ex), keyOf(w1), lookup, 90)!
+    expect(plan.restSeconds).toBeNull()
+    expect(plan.asksRir).toBe(false)
+  })
+  it("does not ask for RIR after a set to failure", () => {
+    const f = set({ setType: "failure" })
+    const ex = exercise([f])
+    expect(planCompletion(w([ex]), keyOf(ex), keyOf(f), lookup, 90)!.asksRir).toBe(false)
+  })
+  it("moves on to the next exercise with open sets after the last set", () => {
+    const last = set()
+    const a = exercise([set({ completed: true }), last])
+    const b = exercise([set()])
+    const plan = planCompletion(w([a, b]), keyOf(a), keyOf(last), lookup, 90)!
+    expect(plan.exerciseFinished).toBe(true)
+    expect(plan.next).toBe(b)
+  })
+  it("leads nowhere after the very last open set", () => {
+    const last = set()
+    const a = exercise([set({ completed: true }), last])
+    const b = exercise([set({ completed: true })])
+    const skipped = exercise([set()], { skipped: true })
+    expect(planCompletion(w([a, b, skipped]), keyOf(a), keyOf(last), lookup, 90)!.next).toBeNull()
+  })
+  it("returns null for unknown or already completed sets", () => {
+    const done = set({ completed: true })
+    const ex = exercise([done])
+    expect(planCompletion(w([ex]), keyOf(ex), keyOf(done), lookup, 90)).toBeNull()
+    expect(planCompletion(w([ex]), keyOf(ex), "missing", lookup, 90)).toBeNull()
   })
 })
