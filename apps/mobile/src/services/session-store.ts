@@ -3,7 +3,10 @@ import { create } from "zustand"
 import type { AuthResponse, TokenPair, UserDto } from "@pondus/shared"
 import { createApiClient, type ApiClient, type TokenStore } from "@/lib/api-client"
 import { queryClient } from "@/lib/query-client"
+import { useActiveWorkoutStore } from "@/features/workout/active-workout-store"
+import { useWorkoutUiStore } from "@/features/workout/workout-ui-store"
 import { resetLocalDb } from "@/storage/db"
+import { useRestTimerStore } from "./rest-timer-store"
 
 const TOKEN_KEY = "pondus.tokens"
 const USER_KEY = "pondus.user"
@@ -50,6 +53,10 @@ export const useSessionStore = create<SessionState>()((set, get) => {
     await SecureStore.deleteItemAsync(USER_KEY)
     queryClient.clear()
     resetLocalDb()
+    // The stores still hold the old account's workout in memory; without this it would be saved again for the next account.
+    useRestTimerStore.getState().stop()
+    useActiveWorkoutStore.getState().clearLocal()
+    useWorkoutUiStore.getState().reset()
     set({ status: "signed_out", user: null, expired })
   }
   const adopt = async (res: AuthResponse) => {

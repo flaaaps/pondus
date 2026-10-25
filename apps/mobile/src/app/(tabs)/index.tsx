@@ -10,7 +10,7 @@ import { useActiveWorkoutStore } from "@/features/workout/active-workout-store"
 import { useStartWorkout } from "@/features/workout/use-start-workout"
 import { useUser } from "@/services/session-store"
 import { useSettingsStore } from "@/services/settings-store"
-import { formatDuration, formatTonnage, relativeDay, RECORD_TYPE_LABELS, formatWeight, todayISO, WEEKDAYS_LONG, WEEKDAYS_SHORT } from "@/lib/format"
+import { formatDuration, formatTonnage, relativeDay, RECORD_TYPE_LABELS, todayISO, WEEKDAYS_LONG, WEEKDAYS_SHORT, formatRecordValue } from "@/lib/format"
 import { errorMessage } from "@/lib/errors"
 
 export default function HomeScreen() {
@@ -168,7 +168,7 @@ export default function HomeScreen() {
                       </Text>
                     </View>
                     <Text variant="numeral" color="accent">
-                      {r.type === "max_reps_at_weight" ? `${r.reps} × ${formatWeight(r.weightGrams, unit)}` : formatWeight(r.valueGrams ?? r.weightGrams, unit)}
+                      {formatRecordValue(r, unit)}
                     </Text>
                   </View>
                 ))}

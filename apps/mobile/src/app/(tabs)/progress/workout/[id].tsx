@@ -4,7 +4,7 @@ import { Button, Card, ErrorState, ListRow, LoadingState, Screen, Section, Stat,
 import { useWorkout, useWorkoutSummary } from "@/features/progress/queries"
 import { useStartWorkout } from "@/features/workout/use-start-workout"
 import { useSettingsStore } from "@/services/settings-store"
-import { formatDateTime, formatDuration, formatTonnage, formatWeight, RECORD_TYPE_LABELS, SET_TYPE_LABELS } from "@/lib/format"
+import { formatDateTime, formatDuration, formatTonnage, formatWeight, RECORD_TYPE_LABELS, SET_TYPE_LABELS, formatRecordValue } from "@/lib/format"
 
 export default function WorkoutDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>()
@@ -46,7 +46,7 @@ export default function WorkoutDetailScreen() {
           <Section title="Bestleistungen in dieser Einheit">
             <Card padding="none">
               {s.records.map((r, i, arr) => (
-                <ListRow key={`${r.exerciseName}-${r.type}`} title={r.exerciseName} subtitle={`${RECORD_TYPE_LABELS[r.type]}${r.isEstimate ? " (Schätzung)" : ""}`} value={r.type === "max_reps_at_weight" ? `${r.reps} × ${formatWeight(r.weightGrams, unit)}` : formatWeight(r.valueGrams ?? r.weightGrams, unit)} last={i === arr.length - 1} />
+                <ListRow key={`${r.exerciseName}-${r.type}`} title={r.exerciseName} subtitle={`${RECORD_TYPE_LABELS[r.type]}${r.isEstimate ? " (Schätzung)" : ""}`} value={formatRecordValue(r, unit)} last={i === arr.length - 1} />
               ))}
             </Card>
           </Section>

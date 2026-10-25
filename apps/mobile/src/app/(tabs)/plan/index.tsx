@@ -96,7 +96,8 @@ export default function PlanScreen() {
 
           <Section title="Diese Woche" action={week.data ? <Text variant="footnote" color="tertiary">{`${relativeDay(`${week.data.weekStart}T12:00:00`)} – ${relativeDay(`${week.data.weekEnd}T12:00:00`)}`}</Text> : undefined}>
             <Card padding="none">
-              {(week.data?.sessions ?? []).map((s, i, arr) => (
+              {/* By date, as the week runs; sessions without a date (skipped) last. */}
+              {[...(week.data?.sessions ?? [])].sort((a, b) => (a.date ?? "9999").localeCompare(b.date ?? "9999") || a.sequence - b.sequence).map((s, i, arr) => (
                 <ListRow
                   key={s.planSessionId}
                   title={s.name}

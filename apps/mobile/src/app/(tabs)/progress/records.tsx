@@ -2,7 +2,7 @@ import { Stack, useRouter } from "expo-router"
 import { Card, EmptyState, ErrorState, ListRow, LoadingState, Screen, Text } from "@/design-system"
 import { useRecords } from "@/features/progress/queries"
 import { useSettingsStore } from "@/services/settings-store"
-import { formatDate, formatWeight, RECORD_TYPE_LABELS } from "@/lib/format"
+import { formatDate, RECORD_TYPE_LABELS, formatRecordValue } from "@/lib/format"
 
 export default function RecordsScreen() {
   const router = useRouter()
@@ -17,7 +17,7 @@ export default function RecordsScreen() {
         {q.data.items.length ? (
           <Card padding="none">
             {q.data.items.map((r, i, arr) => (
-              <ListRow key={r.id} title={r.exerciseName} subtitle={`${RECORD_TYPE_LABELS[r.type]}${r.isEstimate ? " (Schätzung)" : ""} · ${formatDate(r.achievedAt)}`} value={r.type === "max_reps_at_weight" ? `${r.reps} × ${formatWeight(r.weightGrams, unit)}` : formatWeight(r.valueGrams ?? r.weightGrams, unit)} onPress={r.workoutId ? () => router.push(`/(tabs)/progress/workout/${r.workoutId}`) : undefined} last={i === arr.length - 1} />
+              <ListRow key={r.id} title={r.exerciseName} subtitle={`${RECORD_TYPE_LABELS[r.type]}${r.isEstimate ? " (Schätzung)" : ""} · ${formatDate(r.achievedAt)}`} value={formatRecordValue(r, unit)} onPress={r.workoutId ? () => router.push(`/(tabs)/progress/workout/${r.workoutId}`) : undefined} last={i === arr.length - 1} />
             ))}
           </Card>
         ) : (

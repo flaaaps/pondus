@@ -49,6 +49,9 @@ export const DEFAULT_INCREMENT_GRAMS: Record<string, number> = {
   resistance_band: 0,
 }
 
+/** Weights in reason texts with a German decimal comma: "2,5 kg". */
+const kgDe = (grams: number) => `${String(grams / 1000).replace(".", ",")} kg`
+
 /**
  * Smallest sensible load step for an exercise (grams). Bodyweight → 0 (progress via reps);
  * otherwise the largest default step of its equipment (barbell 2.5 kg, dumbbells 2 kg pair …).
@@ -134,7 +137,7 @@ export function recommendProgression(
         suggestedWeightGrams: less,
         suggestedReps: target.repsMin,
         lastWeightGrams: weight,
-        reason: `Alle Sätze am oberen Ende des Bereichs (${target.repsMax} Wdh.). Unterstützung um ${incrementGrams / 1000} kg reduzieren${less === 0 ? " – nächstes Mal ohne Unterstützung" : ""}, zurück auf ${target.repsMin} Wiederholungen.`,
+        reason: `Alle Sätze am oberen Ende des Bereichs (${target.repsMax} Wdh.). Unterstützung um ${kgDe(incrementGrams)} reduzieren${less === 0 ? " – nächstes Mal ohne Unterstützung" : ""}, zurück auf ${target.repsMin} Wiederholungen.`,
       }
     }
     if (incrementGrams <= 0 || weight === 0) {
@@ -151,7 +154,7 @@ export function recommendProgression(
       suggestedWeightGrams: weight + incrementGrams,
       suggestedReps: target.repsMin,
       lastWeightGrams: weight,
-      reason: `Alle Sätze am oberen Ende des Bereichs (${target.repsMax} Wdh.)${target.targetRir !== null ? " mit Reserve" : ""}. Kleine Steigerung um ${incrementGrams / 1000} kg, zurück auf ${target.repsMin} Wiederholungen.`,
+      reason: `Alle Sätze am oberen Ende des Bereichs (${target.repsMax} Wdh.)${target.targetRir !== null ? " mit Reserve" : ""}. Kleine Steigerung um ${kgDe(incrementGrams)}, zurück auf ${target.repsMin} Wiederholungen.`,
     }
   }
 
@@ -167,7 +170,7 @@ export function recommendProgression(
           suggestedWeightGrams: more,
           suggestedReps: target.repsMin,
           lastWeightGrams: weight,
-          reason: `Zweimal in Folge unter ${target.repsMin} Wiederholungen. Etwas mehr Unterstützung (${more / 1000} kg), um wieder sauber im Bereich zu arbeiten.`,
+          reason: `Zweimal in Folge unter ${target.repsMin} Wiederholungen. Etwas mehr Unterstützung (${kgDe(more)}), um wieder sauber im Bereich zu arbeiten.`,
         }
       }
       const stepped = Math.max(0, weight - incrementGrams)
@@ -176,7 +179,7 @@ export function recommendProgression(
         suggestedWeightGrams: stepped,
         suggestedReps: target.repsMin,
         lastWeightGrams: weight,
-        reason: `Zweimal in Folge unter ${target.repsMin} Wiederholungen. Ein Schritt zurück auf ${stepped / 1000} kg, um wieder sauber im Bereich zu arbeiten.`,
+        reason: `Zweimal in Folge unter ${target.repsMin} Wiederholungen. Ein Schritt zurück auf ${kgDe(stepped)}, um wieder sauber im Bereich zu arbeiten.`,
       }
     }
     return {

@@ -5,7 +5,7 @@ import { MUSCLE_GROUPS, gramsToUnit } from "@pondus/shared"
 import { BarChart, Button, Card, EmptyState, ErrorState, ListRow, LoadingState, Screen, Section, SegmentedControl, Stat, Text, useTheme } from "@/design-system"
 import { useOverview, useWorkoutHistory, type Range } from "@/features/progress/queries"
 import { useSettingsStore } from "@/services/settings-store"
-import { formatDate, formatDuration, formatTonnage, relativeDay, RECORD_TYPE_LABELS, formatWeight } from "@/lib/format"
+import { formatDate, formatDuration, formatTonnage, relativeDay, RECORD_TYPE_LABELS, formatRecordValue } from "@/lib/format"
 
 export default function ProgressScreen() {
   const { space, colors } = useTheme()
@@ -115,7 +115,7 @@ export default function ProgressScreen() {
             {o.recentRecords.length ? (
               <Card padding="none">
                 {o.recentRecords.slice(0, 5).map((r, i, arr) => (
-                  <ListRow key={`${r.exerciseName}-${r.type}-${r.achievedAt}`} title={r.exerciseName} subtitle={`${RECORD_TYPE_LABELS[r.type]}${r.isEstimate ? " (Schätzung)" : ""} · ${relativeDay(r.achievedAt)}`} value={r.type === "max_reps_at_weight" ? `${r.reps} × ${formatWeight(r.weightGrams, unit)}` : formatWeight(r.valueGrams ?? r.weightGrams, unit)} onPress={r.exerciseId ? () => router.push(`/(tabs)/progress/exercise/${r.exerciseId}`) : undefined} last={i === arr.length - 1} />
+                  <ListRow key={`${r.exerciseName}-${r.type}-${r.achievedAt}`} title={r.exerciseName} subtitle={`${RECORD_TYPE_LABELS[r.type]}${r.isEstimate ? " (Schätzung)" : ""} · ${relativeDay(r.achievedAt)}`} value={formatRecordValue(r, unit)} onPress={r.exerciseId ? () => router.push(`/(tabs)/progress/exercise/${r.exerciseId}`) : undefined} last={i === arr.length - 1} />
                 ))}
               </Card>
             ) : (

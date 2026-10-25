@@ -26,7 +26,10 @@ export interface ChartPoint {
  * Minimal, legible bar chart for weekly volume / frequency. Pure SVG, no
  * extra dependency. Tapping a bar shows its value; the maximum is labelled.
  */
-export function BarChart({ data, height = 140, formatValue = v => String(v), emptyLabel = "Noch keine Daten" }: { data: ChartPoint[]; height?: number; formatValue?: (v: number) => string; emptyLabel?: string }) {
+/** Default chart value: German decimal comma, at most one decimal ("93,3"). */
+const formatChartNumber = (v: number) => v.toLocaleString("de-DE", { maximumFractionDigits: 1 })
+
+export function BarChart({ data, height = 140, formatValue = formatChartNumber, emptyLabel = "Noch keine Daten" }: { data: ChartPoint[]; height?: number; formatValue?: (v: number) => string; emptyLabel?: string }) {
   const { colors, typography } = useTheme()
   const [width, setWidth] = useState(0)
   const [selected, setSelected] = useState<number | null>(null)
@@ -88,7 +91,7 @@ export function BarChart({ data, height = 140, formatValue = v => String(v), emp
 }
 
 /** Line chart for a single exercise's top set / e1RM trend. */
-export function LineChart({ data, height = 160, formatValue = v => String(v), emptyLabel = "Noch keine Daten" }: { data: ChartPoint[]; height?: number; formatValue?: (v: number) => string; emptyLabel?: string }) {
+export function LineChart({ data, height = 160, formatValue = formatChartNumber, emptyLabel = "Noch keine Daten" }: { data: ChartPoint[]; height?: number; formatValue?: (v: number) => string; emptyLabel?: string }) {
   const { colors, typography } = useTheme()
   const [width, setWidth] = useState(0)
   const [selected, setSelected] = useState<number | null>(null)

@@ -151,6 +151,13 @@ function warmupFamily(pattern: ExerciseRef["movementPattern"]): string {
   }
 }
 
+/** "Brust", "Brust und Rücken", "Brust, Rücken und Schultern". */
+function listDe(items: string[]): string {
+  return items.length <= 1 ? (items[0] ?? "") : `${items.slice(0, -1).join(", ")} und ${items[items.length - 1]}`
+}
+/** Numbers in rationale texts with a German decimal comma: 11,5. */
+const numberDe = (n: number | undefined) => String(n ?? 0).replace(".", ",")
+
 /**
  * Warm-ups only for the first main exercise of each movement family in a session:
  * the very first compound gets `warmupSetsForFirstCompounds`, the first compound of
@@ -478,18 +485,18 @@ function buildRationale(
     items.push({
       key: "focus",
       title: "Deine Schwerpunkte",
-      body: `${names.join(", ")} bekommen mehr Sätze pro Woche und stehen in den Einheiten weiter vorne, wenn du noch frisch bist. Die übrigen Muskelgruppen werden trotzdem mit einem Erhaltungsvolumen trainiert.`,
+      body: `${listDe(names)} ${names.length === 1 ? "bekommt" : "bekommen"} mehr Sätze pro Woche und ${names.length === 1 ? "steht" : "stehen"} in den Einheiten weiter vorne, wenn du noch frisch bist. Die übrigen Muskelgruppen werden trotzdem mit einem Erhaltungsvolumen trainiert.`,
     })
   }
 
   const top = MUSCLE_SLUGS.filter(m => weeklySets[m] > 0)
     .sort((a, b) => weeklySets[b] - weeklySets[a])
     .slice(0, 5)
-    .map(m => `${muscleGroup(m).nameDe}: ${weeklySets[m]}`)
+    .map(m => `${muscleGroup(m).nameDe}: ${numberDe(weeklySets[m])}`)
   items.push({
     key: "volume",
     title: "Wöchentliche Arbeitssätze",
-    body: `Geplant sind grob ${top.join(", ")} Arbeitssätze pro Woche (Nebenmuskeln zählen halb). Ziel war ${targets[profile.musclePriorities[0]?.muscle ?? "chest"]} für deine wichtigste Muskelgruppe. Aufwärmsätze zählen nicht mit.`,
+    body: `Geplant sind grob ${top.join(", ")} Arbeitssätze pro Woche (Nebenmuskeln zählen halb). Ziel war ${numberDe(targets[profile.musclePriorities[0]?.muscle ?? "chest"])} für deine wichtigste Muskelgruppe. Aufwärmsätze zählen nicht mit.`,
   })
 
   const preferredUsed = sessions.flatMap(s => s.exercises).filter(e => profile.preferredExerciseIds.includes(e.exerciseId)).length

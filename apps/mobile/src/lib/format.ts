@@ -1,6 +1,9 @@
-import { SPLIT_LABELS as SHARED_SPLIT_LABELS, formatWeight, gramsToUnit, type WeightUnit } from "@pondus/shared"
+import { SPLIT_LABELS as SHARED_SPLIT_LABELS, formatWeight as formatWeightShared, gramsToUnit, type WeightUnit } from "@pondus/shared"
 
-export { formatWeight }
+/** Weight with a German decimal comma: "92,5 kg" (the shared formatter is locale-neutral). */
+export function formatWeight(grams: number | null, unit: WeightUnit, opts: { withUnit?: boolean } = {}): string {
+  return formatWeightShared(grams, unit, opts).replace(".", ",")
+}
 
 export function kgLabel(grams: number | null, unit: WeightUnit) {
   return formatWeight(grams, unit)
@@ -66,6 +69,13 @@ export const SPLIT_LABELS: Record<string, string> = SHARED_SPLIT_LABELS
 export const CATEGORY_LABELS: Record<string, string> = { compound: "Grundübung", isolation: "Isolation", core: "Rumpf", cardio: "Cardio", mobility: "Mobilität", warmup: "Aufwärmen" }
 export const DIFFICULTY_LABELS: Record<string, string> = { beginner: "Einsteiger", intermediate: "Fortgeschritten", advanced: "Anspruchsvoll" }
 export const SET_TYPE_LABELS: Record<string, string> = { warmup: "Aufwärmen", working: "Arbeitssatz", drop: "Dropset", superset: "Supersatz", failure: "Bis Versagen", backoff: "Back-off" }
+/** Value of a personal record: "12 × 80 kg" for reps at a weight, else the weight; estimates rounded to 100 g. */
+export function formatRecordValue(r: { type: string; reps: number | null; weightGrams: number | null; valueGrams: number | null; isEstimate: boolean }, unit: WeightUnit): string {
+  if (r.type === "max_reps_at_weight") return `${r.reps} × ${formatWeight(r.weightGrams, unit)}`
+  const grams = r.valueGrams ?? r.weightGrams
+  return formatWeight(grams !== null && r.isEstimate ? Math.round(grams / 100) * 100 : grams, unit)
+}
+
 export const RECORD_TYPE_LABELS: Record<string, string> = {
   max_weight: "Neues Maximalgewicht",
   max_reps_at_weight: "Mehr Wiederholungen",

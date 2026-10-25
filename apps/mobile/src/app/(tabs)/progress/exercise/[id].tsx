@@ -30,7 +30,7 @@ export default function ExerciseProgressScreen() {
         <Card>
           <SegmentedControl options={[{ value: "top", label: "Top-Satz" }, { value: "e1rm", label: "e1RM" }, { value: "tonnage", label: "Volumen" }]} value={metric} onChange={setMetric} />
           <View style={{ height: space[3] }} />
-          <LineChart data={points} formatValue={v => (metric === "tonnage" ? formatTonnage(unit === "kg" ? v * 1000 : v * 453.59237, unit) : `${v} ${unit}`)} emptyLabel="Noch keine Daten im Zeitraum" />
+          <LineChart data={points} formatValue={v => (metric === "tonnage" ? formatTonnage(unit === "kg" ? v * 1000 : v * 453.59237, unit) : `${v.toLocaleString("de-DE", { maximumFractionDigits: 1 })} ${unit}`)} emptyLabel="Noch keine Daten im Zeitraum" />
           {metric === "e1rm" ? (
             <Text variant="footnote" color="tertiary" style={{ marginTop: space[2] }}>
               Geschätztes Einer-Maximum (Epley) aus Sätzen bis 12 Wiederholungen. Eine Schätzung, kein gemessener Wert.
@@ -40,7 +40,7 @@ export default function ExerciseProgressScreen() {
         <Card>
           <View style={{ flexDirection: "row", gap: space[3] }}>
             <Stat label="Max. Gewicht" value={formatWeight(d.bests.maxWeightGrams, unit, { withUnit: false })} unit={unit} />
-            <Stat label="e1RM" value={d.bests.estimated1rmGrams ? formatWeight(d.bests.estimated1rmGrams, unit, { withUnit: false }) : "–"} unit={d.bests.estimated1rmGrams ? `${unit} ≈` : undefined} />
+            <Stat label="e1RM" value={d.bests.estimated1rmGrams ? formatWeight(Math.round(d.bests.estimated1rmGrams / 100) * 100, unit, { withUnit: false }) : "–"} unit={d.bests.estimated1rmGrams ? `${unit} ≈` : undefined} />
             <Stat label="Bestes Volumen" value={formatTonnage(d.bests.maxSessionVolumeGrams, unit)} />
           </View>
         </Card>

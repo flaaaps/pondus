@@ -102,7 +102,7 @@ export default function ExerciseDetailScreen() {
 
         <Section title="Entwicklung (12 Wochen)" action={<Button title="Mehr" variant="ghost" size="sm" onPress={() => router.push(`/(tabs)/progress/exercise/${e.id}`)} />}>
           <Card>
-            <LineChart data={points} formatValue={v => `${v} ${unit}`} emptyLabel="Noch keine Trainingsdaten" />
+            <LineChart data={points} formatValue={v => `${v.toLocaleString("de-DE", { maximumFractionDigits: 1 })} ${unit}`} emptyLabel="Noch keine Trainingsdaten" />
             {progress.data?.recommendation ? (
               <Text variant="callout" color="secondary" style={{ marginTop: space[2] }}>
                 {progress.data.recommendation.reason}
