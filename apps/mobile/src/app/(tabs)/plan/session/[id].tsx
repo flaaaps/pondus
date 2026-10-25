@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react"
-import { ActionSheetIOS, Alert, View } from "react-native"
+import { ActionSheetIOS, Alert, Pressable, View } from "react-native"
+import { SymbolView } from "expo-symbols"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { Stack, useLocalSearchParams, useRouter } from "expo-router"
 import type { PlanEditOp, PlanExerciseDto } from "@pondus/shared"
@@ -19,7 +20,7 @@ import { ApiError } from "@/lib/api-client"
  */
 export default function SessionScreen() {
   const { id } = useLocalSearchParams<{ id: string }>()
-  const { space } = useTheme()
+  const { space, colors } = useTheme()
   const router = useRouter()
   const q = useSession(id)
   const edit = useEditPlan(q.data?.planId)
@@ -94,9 +95,13 @@ export default function SessionScreen() {
                   title={e.exerciseName}
                   subtitle={`${e.warmupSets ? `${e.warmupSets} Aufwärm- + ` : ""}${e.targetSets} × ${e.targetRepsMin}–${e.targetRepsMax} Wdh. · ${Math.round(e.restSeconds / 60 * 10) / 10} min Pause${e.targetRir !== null ? ` · RIR ${e.targetRir}` : ""}`}
                   leading={<ExerciseThumbnail slug={slugById.get(e.exerciseId)} size={60} />}
-                  onPress={() => onExerciseOptions(e, i)}
+                  onPress={() => router.push(`/(tabs)/plan/exercise/${e.exerciseId}`)}
                   chevron={false}
-                  trailing={<Text variant="footnote" color="accent">Optionen</Text>}
+                  trailing={
+                    <Pressable accessibilityRole="button" accessibilityLabel="Optionen" hitSlop={10} onPress={() => onExerciseOptions(e, i)} style={({ pressed }) => ({ opacity: pressed ? 0.5 : 1, padding: 4 })}>
+                      <SymbolView name="ellipsis.circle" size={22} tintColor={colors.accent} />
+                    </Pressable>
+                  }
                   last={i === arr.length - 1 && editing !== e.id}
                 />
                 {editing === e.id ? <ExerciseParamsEditor exercise={e} onSave={params => { apply([{ op: "update_exercise", planExerciseId: e.id, params }]); setEditing(null) }} onCancel={() => setEditing(null)} /> : null}
