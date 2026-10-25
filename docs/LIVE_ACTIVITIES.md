@@ -1,6 +1,6 @@
 # Pondus – Live Activities für das aktive Workout
 
-Stand: 25.10.2026. Status: ⬜ geplant, noch nicht umgesetzt.
+Stand: 25.10.2026. Status: 🟡 Spike abgeschlossen (Abschnitt 7), Umsetzung läuft.
 
 Ziel: Während eines Workouts zeigt iOS auf dem Sperrbildschirm und in der Dynamic Island die aktuelle Übung, den Satzfortschritt, Zielgewicht und Wiederholungen, den letzten Satz, den Pausentimer und die Workout-Dauer. In einer zweiten Stufe lassen sich Sätze direkt vom Sperrbildschirm abhaken und die Pause verlängern oder überspringen.
 
@@ -51,9 +51,9 @@ Hevy deckt genau diesen Umfang ab: Pausentimer mit ±15 s und Überspringen, nä
 | Widget Extension + Live Activity | **`expo-widgets`** (offizielles Expo-Modul, stabil seit SDK 56, aktuell 58.0.x) | `@bacons/apple-targets` mit eigenem Swift; Voltra (Callstack); `expo-live-activity` (archiviert seit 06/2026) | Versioniert mit unserem SDK, funktioniert mit CNG und EAS-Credentials, UI bleibt in TypeScript (`@expo/ui/swift-ui`, wird zu SwiftUI). Deckt alle Anzeige-Anforderungen ab, inklusive Timer ohne Updates. |
 | Timer-Darstellung | `Text` mit `timerInterval`/`countsDown`/`pauseTime` und `ProgressView` mit `timerInterval` | Updates im Sekundentakt | iOS rendert die Zeit selbst. Eine suspendierte App kann ohnehin keine Updates senden. |
 | Updates | nur lokal aus der App (`instance.update`) | APNs-Push | Kein Server-Push nötig, keine APNs-Schlüssel, keine Budgets. |
-| Fallback | `@bacons/apple-targets` + eigene Swift-`LiveActivityIntent`s + kleines lokales Expo-Modul | – | Nur falls der Spike zeigt, dass Buttons aus `expo-widgets` bei beendeter App verloren gehen (siehe 7). |
+| Fallback | entfällt | `@bacons/apple-targets` + eigene Swift-`LiveActivityIntent`s | Der Spike bestätigt Weg 1: Taps kommen bei App im Hintergrund und bei gesperrtem iPhone an. Nur der erste Tap nach dem Beenden der App geht verloren (siehe 7). |
 
-Diese Zeile kommt nach Abschluss des Spikes in TECHNICAL_DECISIONS.md.
+Die Entscheidung steht auch in TECHNICAL_DECISIONS.md.
 
 ### Was `expo-widgets` mitbringt (SDK 58)
 
@@ -81,7 +81,7 @@ Die mit `'widget'` markierte Funktion läuft in einer eigenen JS-Engine in der E
 - Starten nur, solange die App im Vordergrund ist. Das passt: ein Workout startet immer in der App.
 - Maximal 8 Stunden aktiv, danach beendet iOS die Activity. Danach bleibt sie bis zu 4 Stunden auf dem Sperrbildschirm.
 - Beenden mit `dismissalPolicy`: `.immediate` beim Abbrechen, `.after(+15 min)` nach Abschluss, damit die Zusammenfassung kurz stehen bleibt.
-- Nutzer können Live Activities pro App abschalten. Es gibt keinen Berechtigungsdialog.
+- Nutzer können Live Activities pro App abschalten. Bei der ersten Activity fragt iOS einmalig auf dem Sperrbildschirm „Live-Aktivitäten von Pondus erlauben?“ (im Spike gesehen).
 
 ### 3.2 Updates im Hintergrund
 
@@ -183,12 +183,13 @@ Dieser Refactor lohnt sich auch ohne Live Activity, weil er Logik aus einer 460-
   - Workout abgeschlossen: Endzustand „Workout beendet · 52 min · 22 Sätze“, `dismissalPolicy` nach 15 Minuten.
   - Workout abgebrochen oder lokal verworfen: sofort beenden.
 - **Nach Neustart:** `getInstances()` beim App-Start. Gehört die Instanz zum aktiven Workout, wird sie übernommen und aktualisiert. Sonst wird sie beendet, zum Beispiel wenn das Workout auf dem Server abgeschlossen wurde.
-- **Fehlertoleranz:** alle Aufrufe in `try/catch`. Eine fehlende Live Activity darf das Workout nie stören. Läuft die App im Simulator oder sind Activities deaktiviert, macht der Controller einfach nichts.
+- **Fehlertoleranz:** alle Aufrufe in `try/catch`. Eine fehlende Live Activity darf das Workout nie stören. Sind Activities deaktiviert, wirft `start()` eine Exception (`LiveActivitiesNotSupportedException`). Der Controller fängt sie ab und versucht es erst beim nächsten Workout wieder.
+- **Registrierung:** `createLiveActivity()` legt das Layout beim Aufruf in der App Group ab. Das Modul muss deshalb bei jedem App-Start geladen werden, bevor eine Activity startet, also als Import in `app/_layout.tsx`.
 - **Einbindung:** einmal in `app/_layout.tsx` nach `hydrate()` starten, ähnlich wie die bestehende Session-Wiederherstellung.
 
 ### 4.4 Einstellungen
 
-Neuer Schalter in Profil → Einstellungen: **„Live Activity auf dem Sperrbildschirm“**, Standard an. Ausschalten beendet eine laufende Activity sofort. Ist die Funktion systemweit für Pondus aus, zeigt der Schalter einen Hinweis auf die iOS-Einstellungen, falls `expo-widgets` den Status ausliest. Das prüft der Spike.
+Neuer Schalter in Profil → Einstellungen: **„Live Activity auf dem Sperrbildschirm“**, Standard an. Ausschalten beendet eine laufende Activity sofort. Den Systemstatus kann `expo-widgets` nicht auslesen, es gibt keine JS-API für `areActivitiesEnabled`. Ist die Funktion systemweit für Pondus aus, erfährt die App das erst über einen fehlgeschlagenen Start. Dann zeigt der Schalter einen Hinweis auf die iOS-Einstellungen.
 
 ## 5. Gestaltung
 
@@ -196,39 +197,36 @@ Systemschrift mit tabellarischen Ziffern (`monospacedDigit`) für alle Zahlen. A
 
 ### Sperrbildschirm (`banner`)
 
+Der Spike hat gezeigt: Das Banner hat etwa 160 pt. Wird es höher, beschneidet iOS von der Mitte aus, Kopf- und Fußzeile fallen weg. Das ursprünglich geplante Layout mit eigener Kopfzeile war schon ohne RIR-Abfrage zu hoch. Dieses kompakte Layout passt auf iOS 26.5 (Simulator) und iOS 27.2 (iPhone 15 Pro) in allen Zuständen:
+
 ```
 ┌──────────────────────────────────────────────┐
-│ ◉ Push A                         ⏱ 32:10    │
-│                                              │
-│ Bankdrücken                    Übung 2 von 6 │
-│ Satz 3 von 4 · Ziel 80 kg × 8                │
-│ Zuletzt 80 kg × 8 · RIR 2                    │
-│                                              │
-│ Pause                                 1:24   │
-│ ████████████░░░░░░░░░░░░░░░░                 │
+│ Bankdrücken                            1:24  │
+│ Übung 2 von 6 · Satz 3 von 4 · 32:10         │
+│ ████████████████████████░░░░░░░░             │
+│ 80 kg × 8  ·  Zuletzt 80 kg × 8 · RIR 2      │
 │ [ Satz ✓ ]  [ −15 s ]  [ +15 s ]  [ Fertig ] │  ← Stufe 2
 └──────────────────────────────────────────────┘
 ```
 
-Direkt nach „Satz ✓“ mit offener RIR-Abfrage (Stufe 2):
+Direkt nach „Satz ✓“ mit offener RIR-Abfrage (Stufe 2) ersetzt eine einzeilige RIR-Reihe die Pausen-Buttons:
 
 ```
 ┌──────────────────────────────────────────────┐
-│ ◉ Push A                         ⏱ 33:02    │
-│ Bankdrücken · Satz 3 von 4 · Ziel 80 kg × 8  │
-│ RIR für Satz 2?                               │
-│ [ 0 ]   [ 1 ]   [ 2 ]   [ 3 ]   [ 4+ ]       │
-│ Pause                                 1:58   │
-│ █░░░░░░░░░░░░░░░░░░░░░░░░░░░                 │
-│ [ −15 s ]        [ +15 s ]        [ Fertig ] │
+│ Bankdrücken                            1:58  │
+│ Übung 2 von 6 · Satz 3 von 4 · 33:02         │
+│ █░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░             │
+│ 80 kg × 8  ·  Zuletzt 80 kg × 8 · RIR 2      │
+│ RIR  [ 0 ]  [ 1 ]  [ 2 ]  [ 3 ]  [ 4+ ]      │
 └──────────────────────────────────────────────┘
 ```
 
-Während die Abfrage offen ist, rücken Übung, Satz und Ziel in eine Zeile, und die Zeile „Zuletzt …“ entfällt. „Satz ✓“ fehlt in dieser Zeit, weil direkt nach einem Satz ohnehin die Pause läuft. Wird die Pause mit „Fertig“ beendet, bevor RIR beantwortet ist, kommt „Satz ✓“ zurück und die Abfrage verschwindet. Der Wert bleibt dann leer, wie wenn man die Abfrage in der App ignoriert.
-
-Ohne laufende Pause entfällt der Pausenblock, und „Satz ✓“ wird zum Hauptbutton. Bei pausiertem Workout steht „Workout pausiert“ statt der Übung, und die Dauer ist eingefroren.
-
-Apple begrenzt die Höhe des Sperrbildschirm-Banners (laut Human Interface Guidelines etwa 160 pt, im Spike zu bestätigen). Die Variante mit RIR-Abfrage ist die höchste und wird im Spike als Erstes gemessen. Passt sie nicht, entfällt dort der Fortschrittsbalken der Pause; der Countdown bleibt.
+- **Keine Kopfzeile:** Der Workout-Name steht nicht im Banner. Die Workout-Dauer zählt in der Fortschrittszeile hoch.
+- **Countdown rechts oben** in Akzentfarbe, 28 pt. Ohne Pause steht dort „Bereit“, nach Ablauf „Pause vorbei“.
+- **Fortschrittsbalken** nur bei laufender Pause. `ProgressView` mit `timerInterval` zeigt sonst zusätzlich die Restzeit als Text, deshalb immer mit `labelsHidden()`.
+- **RIR-Abfrage ohne Fragetext**, nur „RIR“ und fünf Buttons. Die Pausen-Buttons fehlen in dieser Zeit, die Pause läuft weiter. Wird die Pause in der App beendet, bevor RIR beantwortet ist, verschwindet die Abfrage, und der Wert bleibt leer wie beim Ignorieren in der App.
+- **Ohne laufende Pause** entfällt der Balken, und „Satz ✓“ ist der Hauptbutton. Bei pausiertem Workout steht „Workout pausiert“ statt der Fortschrittszeile, und die Dauer ist eingefroren.
+- **Lange Texte** werden einzeilig gekürzt, nicht umgebrochen. Das gilt vor allem für den Übungsnamen.
 
 ### Dynamic Island
 
@@ -237,10 +235,10 @@ Apple begrenzt die Höhe des Sperrbildschirm-Banners (laut Human Interface Guide
 | `compactLeading` | Hantel-Symbol + „3/4“ (Satz) |
 | `compactTrailing` | Pausen-Countdown in Akzentfarbe, ohne Pause die Workout-Dauer |
 | `minimal` | Countdown, sonst Hantel-Symbol |
-| `expandedLeading` | Übungsname + „Satz 3 von 4“ |
+| `expandedLeading` | Übungsname + kurze Fortschrittsangabe „2/6 · Satz 3/4“. Die Region ist schmal, „Übung 2 von 6 · Satz 3 von 4“ wurde im Spike gekürzt. |
 | `expandedTrailing` | Pausen-Countdown groß |
 | `expandedCenter` | leer oder Workout-Name |
-| `expandedBottom` | Ziel, Fortschrittsbalken, in Stufe 2 die Buttons bzw. die RIR-Reihe |
+| `expandedBottom` | Fortschrittsbalken, Ziel und genau eine Button-Reihe (Stufe 2: Pausen-Buttons oder RIR-Reihe). Mehr passt nicht, eine weitere Zeile wurde im Spike abgeschnitten. |
 
 ### Apple Watch Smart Stack und CarPlay (`bannerSmall`)
 
@@ -248,7 +246,7 @@ Zwei Zeilen: „Bankdrücken · 3/4“ und der Countdown oder die Dauer. Keine B
 
 ### Timer-Breite
 
-Expo-Issue #51863: Auf iOS 27 erzeugt `timerInterval` zusammen mit `fixedSize` eine NaN-Breite und zerstört das Banner. Ohne `fixedSize` nimmt der Timer die ganze Zeile ein. Wir geben dem Timer stattdessen einen festen `frame(width:)` passend zu „0:00“ bzw. „00:00“ und prüfen das im Spike auf iOS 26 und 27.
+Expo-Issue #51863: Auf iOS 27 erzeugt `timerInterval` zusammen mit `fixedSize` eine NaN-Breite und zerstört das Banner. Ohne `fixedSize` nimmt der Timer die ganze Zeile ein. Wir geben dem Timer stattdessen einen festen `frame(width:)` passend zu „0:00“ bzw. „00:00“. Im Spike funktioniert das auf iOS 26.5 und iOS 27.2 (64 pt für den großen Countdown). `fixedSize` vermeiden wir.
 
 ## 6. Konfiguration und Build
 
@@ -256,11 +254,13 @@ Expo-Issue #51863: Auf iOS 27 erzeugt `timerInterval` zusammen mit `fixedSize` e
 - `app.json`: Plugin `["expo-widgets", { "groupIdentifier": "group.app.pondus.ios" }]`. `frequentUpdates` bleibt aus, `enablePushNotifications` bleibt aus.
 - Die Live Activity **nicht** in `widgets[]` eintragen, sonst bricht der Build.
 - Apple Developer Portal: App Group `group.app.pondus.ios` und die Extension-ID `app.pondus.ios.ExpoWidgetsTarget` müssen existieren. Den ersten EAS-Build interaktiv laufen lassen, damit EAS die Credentials anlegt, und danach im Portal prüfen.
+- **Signing ohne EAS:** `xcodebuild -allowProvisioningUpdates` legt die App-ID der Extension an, kann die App Group aber nicht zuweisen. Einmalig in Xcode unter Signing & Capabilities bei beiden Targets die App Group `group.app.pondus.ios` anhaken. Für das Team `XTA9CPY447` ist das seit dem 25.10.2026 erledigt: Die App-ID der Extension existiert, die App Group ist beiden App-IDs zugewiesen.
+- **Metro neu starten:** Nach dem Installieren von `expo-widgets` Metro mit `--clear` neu starten. `babel-preset-expo` aktiviert das Plugin für die `'widget'`-Direktive nur, wenn `expo-widgets` beim Start vorhanden ist, und `babel.config.js` cacht die Konfiguration.
 - Lokal: `pnpm prebuild` und `pnpm ios` auf dem Mac. Der Raspberry Pi kann keine iOS-Builds. Dort laufen nur Typecheck, Lint und Jest für `apps/mobile`.
 
 ## 7. Spike vor der Umsetzung (1 Tag, auf echtem iPhone)
 
-Das größte Risiko sind die Buttons. In `expo-widgets` 58 schickt ein Button-Tap nur ein Event `{ source, target, timestamp }` an `addUserInteractionListener`. Es wird nicht gespeichert, trägt keine Activity-ID und ändert die Props nicht. Laut Doku feuert der Listener nur, solange der App-Prozess lebt.
+Das größte Risiko sind die Buttons. In `expo-widgets` 58 schickt ein Button-Tap nur ein Event `{ source, target, timestamp }` an `addUserInteractionListener`. Es wird nicht gespeichert und ändert die Props nicht. `source` ist die Activity-ID (im Spike festgestellt, siehe 7.2). Laut Doku feuert der Listener nur, solange der App-Prozess lebt.
 
 Der Spike baut eine minimale Activity mit Timer und einem Button und prüft:
 
@@ -282,10 +282,55 @@ Der Spike baut eine minimale Activity mit Timer und einem Button und prüft:
 
 **Entschieden (25.10.2026): Weg 1.** Seltene verlorene Taps bei beendeter App sind akzeptiert. Der Swift-Fallback kommt nur noch in Frage, wenn der Spike zeigt, dass Taps auch bei suspendierter App oder gesperrtem iPhone verloren gehen.
 
+### 7.1 Befunde aus dem Quellcode (`expo-widgets` 58.0.23)
+
+Vor dem Gerätetest aus dem nativen Code von `expo-widgets` gelesen:
+
+- **Button-Taps:** Ein `Button` in einer Live Activity wird zu einem `LiveActivityIntent` (`LiveActivityUserInteraction`). Er läuft im App-Prozess und schickt nur eine `NotificationCenter`-Nachricht. Der native Observer dafür existiert nur, solange in JS ein Listener hängt (`OnStartObserving`). Bei beendeter App startet iOS die App für den Intent, `perform()` läuft aber vermutlich, bevor JS geladen ist. Der Tap geht dann verloren. Der Gerätetest bestätigt das nur noch.
+- **Kein Selbst-Update aus der Extension:** Der Mechanismus, bei dem `onPress` neue Props zurückgibt und die Extension sie ohne App speichert, gilt nur für Home-Screen-Widgets (`WidgetUserInteraction`), nicht für Live Activities.
+- **Activities deaktiviert:** `start()` wirft `LiveActivitiesNotSupportedException`, also kein stiller Fehler. Es gibt keine JS-API für `areActivitiesEnabled`. Der Einstellungsschalter (4.4) erfährt den Systemstatus also erst über einen fehlgeschlagenen Start.
+- **Layout-Registrierung:** `createLiveActivity()` legt das Layout beim Aufruf in der App Group ab. Das Modul mit dem Aufruf muss deshalb bei jedem App-Start geladen werden, bevor eine Activity startet.
+- **Props:** Sie gehen als JSON an die Extension. Zeitpunkte deshalb als Millisekunden übergeben und erst in der Widget-Funktion zu `Date` machen.
+- **Widget-Funktion:** Babel macht aus der `'widget'`-Funktion einen String. TypeScript wird entfernt, JSX wird zu `_jsx`, Komponenten und Modifier aus `@expo/ui/swift-ui` sind in der Extension Globals. Template-Literale werden korrekt escaped.
+- **iOS 27:** Xcode 26.6 hat keinen iOS-27-Simulator. #51863 lässt sich nur auf einem Gerät mit iOS 27 prüfen.
+
+### 7.2 Ergebnisse (25.10.2026)
+
+Getestet im Simulator (iPhone 17 Pro, iOS 26.5, Dev-Build) und auf einem iPhone 15 Pro mit iOS 27.2 (Release-Build, API auf dem Pi).
+
+| Fall | Simulator | Gerät (iOS 27.2) |
+| --- | --- | --- |
+| Build | Prebuild und Xcode-Build laufen, die Extension `ExpoWidgetsTarget` wird eingebettet. | Release-Build signiert mit App Group (siehe 6). |
+| Start, Update | `update()` dauert 7 bis 80 ms. | `update()` dauert 2 bis 19 ms. |
+| Timer ohne Updates | Countdown, Balken und Workout-Dauer laufen weiter, auch bei beendeter App. | ✓ |
+| Tap, App im Hintergrund | Kommt 0 bis 4 ms nach dem Tap an, `update()` wirkt. | ✓ auch nach etwa 3 Minuten im Hintergrund, 0 bis 1 ms. |
+| Tap auf dem Sperrbildschirm | ✓ | ✓ |
+| 5 × RIR | Jeder Button liefert sein eigenes `target` (`rir-0` bis `rir-4`). | ✓ |
+| Tap bei beendeter App | **Geht verloren.** iOS startet die App im Hintergrund, das Event kommt nicht an. Der nächste Tap kommt an. | Gleiches Verhalten: `launch [background]` ohne `tap`, der nächste Tap 3 s später kommt an. |
+| Schnelle Mehrfach-Taps | – | Drei „−15 s“ innerhalb einer Sekunde kommen als drei Events an. |
+| `source` im Event | Die **Activity-ID**, nicht der Name aus `createLiveActivity`. | ✓ |
+| Erste Activity | iOS fragt einmalig „Live-Aktivitäten von Pondus erlauben?“. | ✓ |
+| Dark Mode | Banner in beiden Modi dunkel und lesbar, `colorScheme` meldet immer „light“ (#47166). | ✓ |
+| Banner-Höhe | Das ursprüngliche Layout aus Abschnitt 5 war schon ohne RIR-Reihe zu hoch, iOS beschneidet ab etwa 160 pt von der Mitte aus. Das kompakte Layout (heute Abschnitt 5) passt. | Kompaktes Layout passt, nichts gequetscht. |
+| Timer-Breite (#51863) | `frame(width: 64)` korrekt. | `frame(width: 64)` korrekt auf iOS 27.2. `fixedSize` nicht getestet, wir verwenden es nicht. |
+| `ProgressView` mit `timerInterval` | Zeigt zusätzlich die Restzeit als Text, `labelsHidden()` entfernt sie. | ✓ |
+| Erweiterte Dynamic Island | `expandedBottom` mit einer Zeile mehr als Balken, Ziel und Buttons wird abgeschnitten. `expandedLeading` kürzt lange Fortschrittstexte. | ✓ |
+
+**Nicht getestet:** gesperrtes iPhone über mehr als 5 Minuten (die längste Pause im Test war etwa 3 Minuten) und deaktivierte Live Activities. Für Letzteres ist das Verhalten aus dem Quellcode klar (`start()` wirft, siehe 7.1). Beides kommt in die manuelle QA von Phase C (Abschnitt 10).
+
+**Fazit:** Weg 1 ist bestätigt. `expo-widgets` reicht für Anzeige und Buttons, ein Swift-Fallback ist nicht nötig. Folgen für die Umsetzung:
+- Layout nach Abschnitt 5 (kompakt).
+- Phase D entprellt nur „Satz ✓“ und RIR, nicht die Pausen-Buttons, weil schnelle Mehrfach-Taps auf „±15 s“ gewollt sind.
+- Phase D verwirft Taps, deren `source` nicht zur aktuellen Activity gehört.
+
+### 7.3 Spike-Code
+
+Der Spike liegt auf dem Branch `spike/live-activities` und kommt nicht nach `main`: `src/features/live-activity-spike/` (Layout, Controller mit Log in `kv`) und `src/app/spike/live-activity.tsx` (Debug-Screen, Deep Link `pondus://spike/live-activity`). Er eignet sich als Referenz für Layout-Experimente: Der Debug-Screen schaltet Banner-Variante, Timer-Modus und Timer-Breite um, und das Log übersteht einen Kaltstart.
+
 ## 8. Umsetzungsplan
 
-### Phase A – Spike ⬜ (1 Tag)
-Siehe Abschnitt 7. Ergebnis in diesem Dokument und in TECHNICAL_DECISIONS.md festhalten.
+### Phase A – Spike ✅ (25.10.2026)
+Ergebnisse in Abschnitt 7. Weg 1 ist bestätigt, das Layout aus Abschnitt 5 wurde auf das kompakte Banner umgestellt.
 
 ### Phase B – Refactor des Workout-Zustands ⬜ (1 bis 1,5 Tage)
 - `focusedExerciseId` in den Store, persistiert.
@@ -297,7 +342,7 @@ Siehe Abschnitt 7. Ergebnis in diesem Dokument und in TECHNICAL_DECISIONS.md fes
 - Keine sichtbare Verhaltensänderung in der App.
 
 ### Phase C – Live Activity, nur Anzeige ⬜ (2 bis 3 Tage)
-- `expo-widgets` und `@expo/ui` installieren, Plugin konfigurieren, Prebuild prüfen.
+- `expo-widgets` und `@expo/ui` installieren (`~58.0.23`), Plugin konfigurieren, Prebuild prüfen, Metro mit `--clear` neu starten.
 - `buildWorkoutActivityProps()` mit Tests: laufendes Workout, pausiert, Pause läuft, Pause angehalten, Aufwärmsatz, letzte Übung fertig, alle Sätze fertig, leeres freies Training, übersprungene Übungen, `lb`, unterstützte Übung, Körpergewicht, Props unter 4 KB.
 - `WorkoutActivity.tsx` mit allen Regionen aus Abschnitt 5.
 - Controller mit Start, Diff-Update, Ende, `getInstances()`-Abgleich und `AppState`-Resync.
@@ -318,7 +363,8 @@ Siehe Abschnitt 7. Ergebnis in diesem Dokument und in TECHNICAL_DECISIONS.md fes
 - Die bestehende Notification-Logik im Pausentimer plant sich bei `adjust` und `stop` automatisch neu oder bricht ab.
 - Der Controller schreibt danach die neuen Props.
 - RIR-Taps prüfen, dass `rirPendingSetId` noch zum angezeigten Satz gehört. Ein veralteter Tap nach einem Zustandswechsel wird verworfen.
-- Idempotenz: Doppelte Taps innerhalb von 1 Sekunde auf dasselbe Ziel ignorieren, damit kein Satz doppelt abgehakt wird.
+- Idempotenz: Doppelte Taps auf „Satz ✓“ und RIR innerhalb von 1 Sekunde ignorieren, damit kein Satz doppelt abgehakt wird. „±15 s“ und „Fertig“ nicht entprellen, schnelle Mehrfach-Taps auf „±15 s“ sind gewollt (im Spike beobachtet).
+- Taps verwerfen, deren `source` (Activity-ID) nicht zur aktuellen Activity gehört, zum Beispiel von einer veralteten Activity nach einem Absturz.
 - Haptik gibt es auf dem Sperrbildschirm nicht. Die Bestätigung ist die sichtbare Änderung der Activity.
 
 ### Phase E – Feinschliff und Doku ⬜ (0,5 Tage)
@@ -326,7 +372,7 @@ Siehe Abschnitt 7. Ergebnis in diesem Dokument und in TECHNICAL_DECISIONS.md fes
 - VoiceOver-Labels für alle Regionen, Dynamic Type bis `xxxLarge` prüfen.
 - TECHNICAL_DECISIONS.md, ARCHITECTURE.md und IMPLEMENTATION_PLAN.md aktualisieren.
 
-**Gesamt:** etwa 7 bis 9 Arbeitstage mit Weg 1. Nur falls der Spike den Fallback erzwingt, etwa 11 bis 13.
+**Gesamt:** etwa 7 bis 9 Arbeitstage mit Weg 1. Der Spike hat den Fallback nicht nötig gemacht.
 
 ## 9. Spätere Erweiterungen
 
@@ -371,14 +417,14 @@ Siehe Abschnitt 7. Ergebnis in diesem Dokument und in TECHNICAL_DECISIONS.md fes
 
 | Risiko | Auswirkung | Gegenmaßnahme |
 | --- | --- | --- |
-| Button-Taps gehen bei beendeter App verloren | Satz wird nicht abgehakt | Spike vor Phase D; Weg 1 oder Swift-Fallback (Abschnitt 7) |
-| Timer-Breite auf iOS 27 (#51863) | Banner zerstört | fester `frame`, Test auf iOS 27, Issue beobachten |
+| Erster Button-Tap nach dem Beenden der App geht verloren (im Spike bestätigt) | Satz wird nicht abgehakt | akzeptiert (Weg 1). Der fehlende Haken fällt sofort auf, ein zweiter Tap funktioniert. |
+| Timer-Breite auf iOS 27 (#51863) | Banner zerstört | fester `frame(width:)`, im Spike auf iOS 27.2 bestätigt; kein `fixedSize` |
 | `colorScheme` immer „light“ (#47166) | falsche Farben im Dark Mode | nur semantische Systemfarben |
 | `staleDate` feuert verspätet | „Pause vorbei“ erscheint zu spät | Countdown bei 0:00 und Notification sind das primäre Signal |
 | Speichergrenze der Extension | Activity wird nicht angezeigt | kleines Layout, keine Bilder |
-| Banner mit RIR-Reihe zu hoch | iOS schneidet ab | im Spike messen, sonst Pausenbalken in diesem Zustand weglassen |
+| Banner zu hoch (Grenze etwa 160 pt) | iOS schneidet Kopf- und Fußzeile ab | kompaktes Layout aus Abschnitt 5, im Spike auf iOS 26.5 und 27.2 bestätigt; neue Zeilen nur nach Test auf dem Gerät |
 | Workout länger als 8 Stunden | Activity endet von selbst | akzeptiert |
-| EAS legt App Group nicht automatisch an | Build- oder Signierfehler | einmalig im Developer Portal anlegen |
+| App Group fehlt im Provisioning-Profil | Build- oder Signierfehler | für Team `XTA9CPY447` erledigt (siehe 6); bei neuen Teams einmalig in Xcode oder im Developer Portal zuweisen |
 
 ## 12. Entscheidungen (25.10.2026)
 

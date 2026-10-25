@@ -25,6 +25,7 @@ Jede Entscheidung mit Kontext, Alternativen und Begründung. Stand: 25.10.2026.
 | Pausentimer | Wall-Clock-`endsAt` + lokale Notification (`expo-notifications`) | setInterval-Countdown | Übersteht Hintergrund/App-Wechsel; UI tickt nur fürs Rendern. Audio-Background-Mode ist in `app.json` für künftige Timer-Sounds eingetragen. |
 | Offline-Strategie | **Lokal-first mit Outbox** (siehe ARCHITECTURE.md) | Generischer Sync-Layer (Watermelon/Replicache) | Umfang der ersten Version: nur Workout-Schreibpfade müssen offline funktionieren; Lesepfade via Query-Cache. Deterministische Konfliktregeln statt „last write wins“. |
 | IDs | `expo-crypto.randomUUID()` für Client-IDs | uuid-Paket | Nativ, kein Polyfill. |
+| Live Activities | **`expo-widgets` + `@expo/ui`** (SDK 58), Layout in TypeScript mit `'widget'`-Direktive, Updates nur lokal aus der App | `@bacons/apple-targets` mit eigenem Swift, Voltra, APNs-Push | Versioniert mit dem SDK, funktioniert mit CNG. Spike vom 25.10.2026 auf iOS 26.5 und 27.2: Timer laufen ohne Updates, Button-Taps kommen bei App im Hintergrund und auf dem Sperrbildschirm in Millisekunden an. Nur der erste Tap nach dem Beenden der App geht verloren, das ist akzeptiert. Details in LIVE_ACTIVITIES.md. |
 
 ## Backend
 
