@@ -1,0 +1,263 @@
+# ENTWURF – ist deaktiviert, weil GitHub nur *.yml/*.yaml ausführt.
+# Aktivieren: `git mv .github/workflows/ios-testflight.yml.disabled .github/workflows/ios-testflight.yml`,
+# nachdem die einmalige Einrichtung aus docs/APP_DISTRIBUTION.md (Phase 1) erledigt ist.
+#
+# Baut die iOS-App (Expo Prebuild + xcodebuild archive) auf einem macOS-Runner, signiert sie
+# manuell mit Apple-Distribution-Zertifikat und zwei App-Store-Profilen (App + Widget-Extension)
+# und lädt die .ipa zu TestFlight hoch. Läuft nur manuell oder per Tag `ios-v*`, nie für Pull Requests.
+#
+# Secrets (nur im Environment "testflight", nie im Repo):
+#   IOS_DIST_CERT_P12_BASE64   Apple-Distribution-Zertifikat mit privatem Schlüssel, .p12 base64
+#   IOS_DIST_CERT_PASSWORD     Passwort der .p12
+#   IOS_PROFILE_APP_BASE64     App-Store-Profil für app.pondus.ios, base64
+#   IOS_PROFILE_WIDGET_BASE64  App-Store-Profil für app.pondus.ios.ExpoWidgetsTarget, base64
+#   ASC_API_KEY_ID             App Store Connect API Key: Key ID
+#   ASC_API_ISSUER_ID          App Store Connect API Key: Issuer ID
+#   ASC_API_KEY_P8_BASE64      App Store Connect API Key: AuthKey_<ID>.p8, base64
+# Variables (Repository oder Environment, keine Geheimnisse):
+#   APPLE_TEAM_ID              z. B. XTA9CPY447
+#   EXPO_PUBLIC_API_URL        API-URL, die ins Bundle kompiliert wird
+#   IOS_BUILD_NUMBER_OFFSET    optional, Standard 0
+name: iOS TestFlight
+
+on:
+  workflow_dispatch:
+    inputs:
+      upload:
+        description: "Nach TestFlight hochladen (aus = nur bauen und signieren)"
+        type: boolean
+        default: true
+  push:
+    tags: ["ios-v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-testflight
+  cancel-in-progress: false
+
+jobs:
+  build:
+    # Forks haben keine Secrets; der Job soll dort gar nicht erst starten.
+    if: github.repository == 'flaaaps/pondus'
+    # macos-26: arm64 (M1, 3 Kerne, 7 GB RAM, 14 GB SSD), für öffentliche Repos kostenlos.
+    runs-on: macos-26
+    timeout-minutes: 75
+    environment: testflight
+    env:
+      # Gleiche Xcode-Version wie auf dem MacBook; nach SDK-Updates bewusst anheben.
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+      APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+      EXPO_PUBLIC_API_URL: ${{ vars.EXPO_PUBLIC_API_URL }}
+      APP_BUNDLE_ID: app.pondus.ios
+      WIDGET_BUNDLE_ID: app.pondus.ios.ExpoWidgetsTarget
+      APP_GROUP: group.app.pondus.ios
+      SCHEME: Pondus
+    defaults:
+      run:
+        working-directory: apps/mobile
+    steps:
+      - name: Voraussetzungen prüfen
+        working-directory: .
+        env:
+          HAS_CERT: ${{ secrets.IOS_DIST_CERT_P12_BASE64 != '' && secrets.IOS_DIST_CERT_PASSWORD != '' }}
+          HAS_PROFILES: ${{ secrets.IOS_PROFILE_APP_BASE64 != '' && secrets.IOS_PROFILE_WIDGET_BASE64 != '' }}
+          HAS_ASC: ${{ secrets.ASC_API_KEY_ID != '' && secrets.ASC_API_ISSUER_ID != '' && secrets.ASC_API_KEY_P8_BASE64 != '' }}
+        run: |
+          missing=0
+          [ "$HAS_CERT" = "true" ]      || { echo "::error::Zertifikat-Secrets fehlen (IOS_DIST_CERT_*)"; missing=1; }
+          [ "$HAS_PROFILES" = "true" ]  || { echo "::error::Profil-Secrets fehlen (IOS_PROFILE_*)"; missing=1; }
+          [ "$HAS_ASC" = "true" ]       || { echo "::error::App-Store-Connect-Secrets fehlen (ASC_API_*)"; missing=1; }
+          [ -n "$APPLE_TEAM_ID" ]       || { echo "::error::Variable APPLE_TEAM_ID fehlt"; missing=1; }
+          [ -n "$EXPO_PUBLIC_API_URL" ] || { echo "::error::Variable EXPO_PUBLIC_API_URL fehlt"; missing=1; }
+          [ -d "$DEVELOPER_DIR" ]       || { echo "::error::$DEVELOPER_DIR fehlt auf dem Runner"; ls -d /Applications/Xcode*; missing=1; }
+          exit $missing
+
+      - uses: actions/checkout@v7
+
+      # Version kommt aus "packageManager" in package.json.
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install (Mobile und Workspace-Abhängigkeiten)
+        working-directory: .
+        run: pnpm install --frozen-lockfile --filter "@pondus/mobile..."
+
+      - name: Typecheck, Lint, Tests
+        run: |
+          pnpm run typecheck
+          pnpm run lint
+          pnpm run test --ci
+
+      - name: Build-Nummer und Team setzen
+        run: |
+          BUILD_NUMBER=$(( GITHUB_RUN_NUMBER + ${{ vars.IOS_BUILD_NUMBER_OFFSET || 0 }} ))
+          VERSION=$(jq -r '.expo.version' app.json)
+          echo "BUILD_NUMBER=$BUILD_NUMBER" >> "$GITHUB_ENV"
+          echo "APP_VERSION=$VERSION" >> "$GITHUB_ENV"
+          # Nur im Runner, wird nicht committet.
+          jq --arg b "$BUILD_NUMBER" --arg t "$APPLE_TEAM_ID" \
+            '.expo.ios.buildNumber = $b | .expo.ios.appleTeamId = $t' app.json > app.json.tmp
+          mv app.json.tmp app.json
+          echo "Version $VERSION ($BUILD_NUMBER)"
+
+      - name: Prebuild (ios/ generieren)
+        run: pnpm exec expo prebuild --platform ios --clean --no-install
+
+      - name: CocoaPods-Cache
+        uses: actions/cache@v5
+        with:
+          path: apps/mobile/ios/Pods
+          key: pods-${{ runner.os }}-xcode26.6-${{ hashFiles('pnpm-lock.yaml', 'apps/mobile/package.json') }}
+
+      - name: Pod install
+        working-directory: apps/mobile/ios
+        run: pod install
+
+      - name: Generiertes Projekt prüfen
+        run: |
+          # Die Widget-Extension muss existieren und beide Targets brauchen die App Group.
+          test -d "ios/$SCHEME.xcworkspace"
+          grep -q "ExpoWidgetsTarget" "ios/$SCHEME.xcodeproj/project.pbxproj"
+          for f in $(find ios -name "*.entitlements" -not -path "ios/Pods/*"); do
+            echo "== $f"; cat "$f"
+            grep -q "$APP_GROUP" "$f" || { echo "::error::$APP_GROUP fehlt in $f"; exit 1; }
+          done
+          # Version und Build-Nummer in App und Extension gleich halten (sonst Upload-Warnung ITMS-90473).
+          for p in $(find ios -name Info.plist -not -path "ios/Pods/*" -not -path "ios/build/*"); do
+            /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUMBER" "$p" 2>/dev/null || true
+            /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $APP_VERSION" "$p" 2>/dev/null || true
+            echo "$p: $(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$p" 2>/dev/null) ($(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$p" 2>/dev/null))"
+          done
+
+      - name: Signing einrichten (temporäre Keychain, Profile)
+        env:
+          CERT_B64: ${{ secrets.IOS_DIST_CERT_P12_BASE64 }}
+          CERT_PASSWORD: ${{ secrets.IOS_DIST_CERT_PASSWORD }}
+          PROFILE_APP_B64: ${{ secrets.IOS_PROFILE_APP_BASE64 }}
+          PROFILE_WIDGET_B64: ${{ secrets.IOS_PROFILE_WIDGET_BASE64 }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          KEYCHAIN_PASSWORD=$(openssl rand -hex 24)
+          printf '%s' "$CERT_B64" | base64 --decode > "$RUNNER_TEMP/dist.p12"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/dist.p12" -P "$CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security list-keychain -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          rm "$RUNNER_TEMP/dist.p12"
+
+          PROFILES="$HOME/Library/MobileDevice/Provisioning Profiles"
+          mkdir -p "$PROFILES"
+          install_profile() {
+            local b64="$1" var="$2" file="$RUNNER_TEMP/$2.mobileprovision"
+            printf '%s' "$b64" | base64 --decode > "$file"
+            security cms -D -i "$file" > "$RUNNER_TEMP/$2.plist"
+            local uuid name
+            uuid=$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$RUNNER_TEMP/$2.plist")
+            name=$(/usr/libexec/PlistBuddy -c 'Print :Name' "$RUNNER_TEMP/$2.plist")
+            cp "$file" "$PROFILES/$uuid.mobileprovision"
+            echo "${var}=$name" >> "$GITHUB_ENV"
+            echo "$var: $name ($uuid), läuft ab: $(/usr/libexec/PlistBuddy -c 'Print :ExpirationDate' "$RUNNER_TEMP/$2.plist")"
+          }
+          install_profile "$PROFILE_APP_B64" PROFILE_APP_NAME
+          install_profile "$PROFILE_WIDGET_B64" PROFILE_WIDGET_NAME
+
+      - name: Targets auf manuelles Signing umstellen
+        run: |
+          set -euo pipefail
+          # fastlane ist auf den macOS-Runnern vorinstalliert; wir nutzen nur diese eine Action, kein Fastfile.
+          fastlane run update_code_signing_settings path:"ios/$SCHEME.xcodeproj" \
+            use_automatic_signing:false team_id:"$APPLE_TEAM_ID" targets:"$SCHEME" \
+            code_sign_identity:"Apple Distribution" profile_name:"$PROFILE_APP_NAME" build_configurations:Release
+          fastlane run update_code_signing_settings path:"ios/$SCHEME.xcodeproj" \
+            use_automatic_signing:false team_id:"$APPLE_TEAM_ID" targets:ExpoWidgetsTarget \
+            code_sign_identity:"Apple Distribution" profile_name:"$PROFILE_WIDGET_NAME" build_configurations:Release
+
+      - name: Archive
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -workspace "ios/$SCHEME.xcworkspace" -scheme "$SCHEME" -configuration Release \
+            -destination "generic/platform=iOS" -archivePath "$RUNNER_TEMP/$SCHEME.xcarchive" \
+            archive | xcbeautify --renderer github-actions
+
+      - name: Export (.ipa)
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>export</string>
+            <key>teamID</key><string>$APPLE_TEAM_ID</string>
+            <key>signingStyle</key><string>manual</string>
+            <key>signingCertificate</key><string>Apple Distribution</string>
+            <key>provisioningProfiles</key>
+            <dict>
+              <key>$APP_BUNDLE_ID</key><string>$PROFILE_APP_NAME</string>
+              <key>$WIDGET_BUNDLE_ID</key><string>$PROFILE_WIDGET_NAME</string>
+            </dict>
+            <key>uploadSymbols</key><true/>
+            <key>manageAppVersionAndBuildNumber</key><false/>
+          </dict>
+          </plist>
+          EOF
+          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/$SCHEME.xcarchive" \
+            -exportPath "$RUNNER_TEMP/export" -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist"
+          IPA=$(ls "$RUNNER_TEMP"/export/*.ipa)
+          echo "IPA=$IPA" >> "$GITHUB_ENV"
+
+      - name: IPA prüfen (Extension, App Group)
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP" && rm -rf ipa-check && mkdir ipa-check && unzip -q "$IPA" -d ipa-check
+          APP=$(ls -d ipa-check/Payload/*.app)
+          APPEX=$(ls -d "$APP"/PlugIns/*.appex)
+          for b in "$APP" "$APPEX"; do
+            echo "== $b"
+            codesign -d --entitlements :- "$b" > ent.plist
+            cat ent.plist
+            grep -q "$APP_GROUP" ent.plist || { echo "::error::$APP_GROUP fehlt in der Signatur von $b"; exit 1; }
+          done
+          rm -rf ipa-check ent.plist
+
+      - name: Upload zu TestFlight
+        if: github.event_name == 'push' || inputs.upload
+        env:
+          ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
+          ASC_API_ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
+          ASC_API_KEY_P8_BASE64: ${{ secrets.ASC_API_KEY_P8_BASE64 }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.appstoreconnect/private_keys"
+          printf '%s' "$ASC_API_KEY_P8_BASE64" | base64 --decode > "$HOME/.appstoreconnect/private_keys/AuthKey_$ASC_API_KEY_ID.p8"
+          xcrun altool --upload-app -f "$IPA" -t ios --apiKey "$ASC_API_KEY_ID" --apiIssuer "$ASC_API_ISSUER_ID"
+
+      - name: Zusammenfassung
+        if: success()
+        run: |
+          {
+            echo "### Pondus $APP_VERSION ($BUILD_NUMBER)"
+            echo "- Commit: \`${GITHUB_SHA::7}\`"
+            echo "- API: \`$EXPO_PUBLIC_API_URL\`"
+            echo "- TestFlight: Verarbeitung dauert etwa 10–30 Minuten, danach erscheint der Build in der TestFlight-App."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Bewusst kein upload-artifact: Artefakte öffentlicher Repos kann jeder angemeldete GitHub-Nutzer laden.
+
+      - name: Aufräumen
+        if: always()
+        working-directory: .
+        run: |
+          security delete-keychain "$RUNNER_TEMP/signing.keychain-db" 2>/dev/null || true
+          rm -f "$HOME/Library/MobileDevice/Provisioning Profiles/"*.mobileprovision
+          rm -rf "$HOME/.appstoreconnect/private_keys" "$RUNNER_TEMP"/*.mobileprovision "$RUNNER_TEMP"/*.plist

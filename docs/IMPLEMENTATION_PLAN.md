@@ -54,6 +54,6 @@ Overview (Wochenvolumen, Streak, Verteilung), Übungsentwicklung (Top-Satz, e1RM
 ## Nächste Schritte (Vorschlag)
 1. Simulator-Durchlauf des Abnahmeflusses, Screenshots, Feinschliff.
 2. Deployment der API (Node 22+, PostgreSQL, `pnpm --filter @pondus/api build && db:migrate:prod && db:seed`), Secrets über Infisical.
-3. EAS Build / TestFlight.
+3. App-Verteilung ohne MacBook: GitHub Actions baut, signiert und lädt nach TestFlight hoch, später optional EAS Update für JS-Hotfixes. Plan in `APP_DISTRIBUTION.md`, Workflow-Entwurf in `.github/workflows/ios-testflight.yml.disabled`.
 4. Live Activity für das aktive Workout (Sperrbildschirm, Dynamic Island): Plan in `LIVE_ACTIVITIES.md`.
 5. Später: Supersätze als verknüpfte Sätze in der UI, Apple-Health-Export, Lokalisierung EN.
