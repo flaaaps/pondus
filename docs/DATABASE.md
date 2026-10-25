@@ -23,7 +23,7 @@ PostgreSQL ≥ 16, Drizzle ORM (`apps/api/src/db/schema.ts`), Migrationen in `ap
 | `session_overrides` | Kalender-Overrides pro Woche | `session_key` (Kopie aus der Session); (user, `session_key`, `week_start`) und (session, `week_start`) unique; `moved` + Datum oder `skipped` |
 | `plan_adjustment_previews` | Vorschauen | Proposal + Diff jsonb, `base_version_number`, Ablauf 30 min, `applied_at` |
 | `workouts` | Trainingseinheiten | `client_id` (unique je Nutzer → idempotenter Start), Status, Plan-/Versions-/Session-Referenzen (`set null`), `source_session_key` (stabiler Session-Schlüssel, Index mit `user_id`), Pausenzeit, Dauer |
-| `workout_exercises` | Übungen im Workout | `exercise_name_snapshot`, Ziele kopiert, `next_target` (jsonb, Progressionsziel beim Start), `skipped`, `client_id` unique je Workout; `exercise_id` `set null` bei Löschung |
+| `workout_exercises` | Übungen im Workout | `exercise_name_snapshot`, Ziele kopiert, `next_target` (jsonb, Progressionsziel beim Start), `skipped`, `replaces_workout_exercise_id` (Original beim „nur heute tauschen“, wird beim Entfernen des Originals geleert), `client_id` unique je Workout; `exercise_id` `set null` bei Löschung |
 | `workout_sets` | Sätze | Typ, Gramm, Wdh., RIR, RPE, completed, Zielwerte, `client_updated_at` (Konfliktauflösung) |
 | `personal_records` | erkannte Rekorde | Typ, Werte, Workout-Referenz, `is_estimate` |
 | `exercise_bests` | laufende Bestwerte je Nutzer/Übung | Cache für Rekorderkennung; bei `load_type = assisted` nur `reps_at_weight` (Migration `0002` hat Gewichts-/Volumen-/e1RM-Bests von `assisted-pull-up`/`assisted-dip` genullt) |

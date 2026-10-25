@@ -172,6 +172,63 @@ describe("workouts", () => {
     expect((history.json as { items: unknown[] }).items).toHaveLength(1)
   })
 
+  it("swaps an exercise, swaps the stand-in again, removes it and restores the original – by server id and by client id", async () => {
+    const u = await setupOnboardedUser(app)
+    const bench = await exerciseIdBySlug(app, u.token, "barbell-bench-press")
+    const dbBench = await exerciseIdBySlug(app, u.token, "dumbbell-bench-press")
+    const machine = await exerciseIdBySlug(app, u.token, "machine-chest-press")
+    const workoutClientId = randomUUID()
+    let w = (await api(app, u.token, "POST", "/workouts", { clientId: workoutClientId, source: { type: "empty" } })).json as WorkoutDto
+    w = (await api(app, u.token, "POST", `/workouts/${w.id}/exercises`, { clientId: randomUUID(), exerciseId: bench, targetSets: 3 })).json as WorkoutDto
+    const original = w.exercises[0]!
+
+    // Swap by server id (REST): the original is skipped, the stand-in follows it and points back at it.
+    const standInClientId = randomUUID()
+    w = (await api(app, u.token, "POST", `/workouts/${w.id}/exercises`, { clientId: standInClientId, exerciseId: dbBench, targetSets: 3, replacesWorkoutExerciseId: original.id })).json as WorkoutDto
+    expect(w.exercises.map(e => [e.sequence, e.skipped])).toEqual([
+      [1, true],
+      [2, false],
+    ])
+    const standIn = w.exercises[1]!
+    expect(standIn.replacesWorkoutExerciseId).toBe(original.id)
+
+    // Swap the stand-in again, addressed by its client id (that is all the app knows before a sync), through the offline sync path.
+    const secondClientId = randomUUID()
+    const sync = await api(app, u.token, "POST", "/sync/workouts", {
+      mutations: [{ kind: "add_exercise", workoutClientId, body: { clientId: secondClientId, exerciseId: machine, targetSets: 2, replacesWorkoutExerciseId: standInClientId, sequence: 3 } }],
+    })
+    expect(sync.status).toBe(200)
+    const synced = sync.json as { results: { status: string; message?: string }[]; workouts: WorkoutDto[] }
+    expect(synced.results[0]).toMatchObject({ status: "applied" })
+    w = synced.workouts[0]!
+    expect(w.exercises.map(e => [e.sequence, e.skipped, e.clientId === secondClientId])).toEqual([
+      [1, true, false],
+      [2, true, false],
+      [3, false, true],
+    ])
+    expect(w.exercises[2]!.replacesWorkoutExerciseId).toBe(standIn.id)
+
+    // Swap back: un-skip the stand-in by client id and remove the second stand-in; the gap in the sequence closes.
+    const back = await api(app, u.token, "POST", "/sync/workouts", {
+      mutations: [
+        { kind: "update_exercise", workoutClientId, exerciseClientId: standInClientId, body: { skipped: false } },
+        { kind: "remove_exercise", workoutClientId, exerciseClientId: secondClientId },
+      ],
+    })
+    expect((back.json as { results: { status: string }[] }).results.map(r => r.status)).toEqual(["applied", "applied"])
+    w = (await api(app, u.token, "GET", `/workouts/${w.id}`)).json as WorkoutDto
+    expect(w.exercises.map(e => [e.sequence, e.skipped])).toEqual([
+      [1, true],
+      [2, false],
+    ])
+
+    // Restore the original (REST, by id) and drop the stand-in; removing it twice is harmless.
+    w = (await api(app, u.token, "PATCH", `/workouts/${w.id}/exercises/${original.id}`, { skipped: false })).json as WorkoutDto
+    w = (await api(app, u.token, "DELETE", `/workouts/${w.id}/exercises/${standInClientId}`)).json as WorkoutDto
+    expect((await api(app, u.token, "DELETE", `/workouts/${w.id}/exercises/${standInClientId}`)).status).toBe(200)
+    expect(w.exercises.map(e => [e.id, e.sequence, e.skipped])).toEqual([[original.id, 1, false]])
+  })
+
   it("honours the Idempotency-Key header for POST requests", async () => {
     const u = await setupOnboardedUser(app)
     const key = randomUUID()

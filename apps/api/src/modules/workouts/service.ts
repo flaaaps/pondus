@@ -119,6 +119,16 @@ export function createWorkoutsService(db: Db) {
     return rows.map(r => ({ performedAt: r.completedAt!.toISOString(), sets: toPerformed(sets.filter(s => s.workoutExerciseId === r.workoutExerciseId)) }))
   }
 
+  /** An exercise of the workout by server id or client id (the app only knows the client id until the first sync). */
+  async function findExercise(tx: DbOrTx, workoutId: string, idOrClientId: string) {
+    const isUuid = /^[0-9a-f-]{36}$/i.test(idOrClientId)
+    const [row] = await tx
+      .select()
+      .from(workoutExercises)
+      .where(and(eq(workoutExercises.workoutId, workoutId), isUuid ? or(eq(workoutExercises.id, idOrClientId), eq(workoutExercises.clientId, idOrClientId)) : eq(workoutExercises.clientId, idOrClientId)))
+    return row ?? null
+  }
+
   async function toDto(tx: DbOrTx, w: WorkoutRow): Promise<WorkoutDto> {
     const exRows = await tx.select().from(workoutExercises).where(eq(workoutExercises.workoutId, w.id)).orderBy(asc(workoutExercises.sequence))
     const setRows = exRows.length ? await tx.select().from(workoutSets).where(inArray(workoutSets.workoutExerciseId, exRows.map(e => e.id))).orderBy(asc(workoutSets.setNumber)) : []
@@ -137,6 +147,7 @@ export function createWorkoutsService(db: Db) {
         targetRir: e.targetRir,
         skipped: e.skipped,
         notes: e.notes,
+        replacesWorkoutExerciseId: e.replacesWorkoutExerciseId,
         nextTarget: e.nextTarget ?? null,
         sets: setRows.filter(s => s.workoutExerciseId === e.id).map(setToDto),
         previous: e.exerciseId ? await previousPerformance(tx, w.userId, e.exerciseId, w.startedAt) : null,
@@ -178,13 +189,14 @@ export function createWorkoutsService(db: Db) {
     userId: string,
     workoutId: string,
     startedAt: Date,
-    input: { clientId: string | null; exerciseId: string; name: string; sequence: number; targetSets: number | null; targetRepsMin: number | null; targetRepsMax: number | null; restSeconds: number | null; targetRir: number | null; warmupSets?: number },
+    input: { clientId: string | null; exerciseId: string; name: string; sequence: number; targetSets: number | null; targetRepsMin: number | null; targetRepsMax: number | null; restSeconds: number | null; targetRir: number | null; warmupSets?: number; replacesWorkoutExerciseId?: string | null },
   ): Promise<WorkoutExerciseRow> {
     const [row] = await tx
       .insert(workoutExercises)
       .values({
         workoutId,
         clientId: input.clientId,
+        replacesWorkoutExerciseId: input.replacesWorkoutExerciseId ?? null,
         exerciseId: input.exerciseId,
         exerciseNameSnapshot: input.name,
         sequence: input.sequence,
@@ -360,13 +372,15 @@ export function createWorkoutsService(db: Db) {
         const [ex] = await tx.select().from(exercises).where(and(eq(exercises.id, body.exerciseId), isNull(exercises.deletedAt), or(eq(exercises.isSystem, true), eq(exercises.ownerUserId, userId))))
         if (!ex) throw badRequest("unknown_exercise", "Exercise not found")
         let sequence: number
+        let replaces: string | null = null
         if (body.replacesWorkoutExerciseId) {
-          const [old] = await tx.select().from(workoutExercises).where(and(eq(workoutExercises.id, body.replacesWorkoutExerciseId), eq(workoutExercises.workoutId, w.id)))
+          // The app addresses exercises by client id once it created them itself (their server id is only known after a sync).
+          const old = await findExercise(tx, w.id, body.replacesWorkoutExerciseId)
           if (!old) throw notFound("Workout exercise")
           await tx.update(workoutExercises).set({ skipped: true, updatedAt: new Date() }).where(eq(workoutExercises.id, old.id))
-          sequence = old.sequence
           await tx.execute(sql`update workout_exercises set sequence = sequence + 1 where workout_id = ${w.id} and sequence > ${old.sequence}`)
           sequence = old.sequence + 1
+          replaces = old.id
         } else {
           const maxRows = await tx.select({ max: sql<number>`coalesce(max(sequence), 0)::int` }).from(workoutExercises).where(eq(workoutExercises.workoutId, w.id))
           sequence = (maxRows[0]?.max ?? 0) + 1
@@ -375,6 +389,7 @@ export function createWorkoutsService(db: Db) {
           clientId: body.clientId,
           exerciseId: ex.id,
           name: ex.nameDe,
+          replacesWorkoutExerciseId: replaces,
           sequence: body.sequence ?? sequence,
           targetSets: body.targetSets ?? 3,
           targetRepsMin: body.targetRepsMin ?? null,
@@ -391,9 +406,24 @@ export function createWorkoutsService(db: Db) {
     async updateExercise(userId: string, workoutId: string, workoutExerciseId: string, body: UpdateExerciseBody) {
       return db.transaction(async tx => {
         const w = await openWorkout(tx, userId, workoutId)
-        const [row] = await tx.select().from(workoutExercises).where(and(eq(workoutExercises.id, workoutExerciseId), eq(workoutExercises.workoutId, w.id)))
+        const row = await findExercise(tx, w.id, workoutExerciseId)
         if (!row) throw notFound("Workout exercise")
         await tx.update(workoutExercises).set({ ...body, updatedAt: new Date() }).where(eq(workoutExercises.id, row.id))
+        await touch(tx, w.id)
+        return toDto(tx, w)
+      })
+    },
+
+    /** Drops an exercise with its sets and closes the gap in the sequence. Idempotent: unknown ids are a no-op. */
+    async removeExercise(userId: string, workoutId: string, workoutExerciseId: string) {
+      return db.transaction(async tx => {
+        const w = await openWorkout(tx, userId, workoutId)
+        const row = await findExercise(tx, w.id, workoutExerciseId)
+        if (row) {
+          await tx.delete(workoutExercises).where(eq(workoutExercises.id, row.id))
+          await tx.update(workoutExercises).set({ replacesWorkoutExerciseId: null }).where(and(eq(workoutExercises.workoutId, w.id), eq(workoutExercises.replacesWorkoutExerciseId, row.id)))
+          await tx.execute(sql`update workout_exercises set sequence = sequence - 1 where workout_id = ${w.id} and sequence > ${row.sequence}`)
+        }
         await touch(tx, w.id)
         return toDto(tx, w)
       })

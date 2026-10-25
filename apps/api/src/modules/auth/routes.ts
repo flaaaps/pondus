@@ -6,7 +6,8 @@ import { createAuthService, ttlToSeconds } from "./service.js"
 
 export const authRoutes: FastifyPluginAsyncZod<{ env: Env }> = async (app, { env }) => {
   const service = createAuthService({ db: app.db, jwt: app.jwt, refreshTtlDays: env.REFRESH_TOKEN_TTL_DAYS, accessTtlSeconds: ttlToSeconds(env.ACCESS_TOKEN_TTL) })
-  const strict = { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }
+  // Brute-force guard for the credential endpoints; the integration tests register a user per case.
+  const strict = { config: { rateLimit: { max: env.NODE_ENV === "test" ? 100000 : 10, timeWindow: "1 minute" } } }
 
   app.post("/register", { ...strict, schema: { tags: ["auth"], security: [], body: registerBody, response: { 201: authResponse, 409: errorResponse } } }, async (req, reply) => {
     const result = await service.register(req.body, req.headers["user-agent"])

@@ -18,9 +18,10 @@ export interface DockAction {
 
 /**
  * The glass dock at the bottom of the active workout: an optional toast row
- * (undo / exercise done), the rest timer and the one main action. Everything the thumb needs, nothing else.
+ * (undo / exercise done), the RIR question for the set just logged, the rest timer and the
+ * one main action. Everything the thumb needs, nothing else.
  */
-export function WorkoutDock({ toast, primary, secondary, compact, currentExercise, onLayout }: { toast?: ReactNode; primary: DockAction; secondary?: DockAction; compact: boolean; currentExercise: string | null; onLayout?: (height: number) => void }) {
+export function WorkoutDock({ toast, prompt, primary, secondary, compact, currentExercise, onLayout }: { toast?: ReactNode; /** A question for the set just logged (RIR), shown above the rest timer where the thumb already is. */ prompt?: ReactNode; primary: DockAction; secondary?: DockAction; compact: boolean; currentExercise: string | null; onLayout?: (height: number) => void }) {
   const { colors, space, radius, sizes } = useTheme()
   const [locked, setLocked] = useState(false)
   const unlock = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -37,6 +38,7 @@ export function WorkoutDock({ toast, primary, secondary, compact, currentExercis
     <View pointerEvents="box-none" onLayout={e => onLayout?.(e.nativeEvent.layout.height)} style={{ gap: space[2] }}>
       <GlassSurface interactive style={{ padding: space[2], gap: space[2] }}>
         {toast}
+        {prompt}
         <RestTimerRow compact={compact} currentExercise={currentExercise} />
         <View style={{ flexDirection: "row", gap: space[2] }}>
           {secondary ? (

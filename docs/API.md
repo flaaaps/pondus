@@ -56,7 +56,8 @@ Basis: `/api/v1`. Auth: `Authorization: Bearer <accessToken>` (alle Endpunkte au
 | GET | `/workouts/active` | laufendes/pausiertes Workout oder `null` |
 | POST | `/workouts` | `{ clientId, source: plan_session | repeat_workout | empty | plan_session_client, startedAt? }` → 201 neu / 200 bereits vorhanden. Übungen mit Wdh.-Bereich (Plan-Session, Wiederholen, Hinzufügen mit `targetRepsMin/Max`) bekommen `nextTarget = { kind: increase_load|increase_reps|hold|deload|no_data, weightGrams, repsPerSet[], targetRir, lastWeightGrams, basedOn, reason }` (Doppelprogression aus den letzten 2 Einheiten). Arbeitssätze werden mit dem Ziel vorbelegt (`targetWeightGrams/targetReps` und `weightGrams/reps`); ohne Ziellast (no_data, Körpergewicht) bleibt das zuletzt geloggte Gewicht bzw. leer. `previous` zeigt weiter die letzten Werte. Bei `loadType = assisted` ist Gewicht = Unterstützung (weniger = schwerer); dafür gibt es keine Gewichts-/Volumen-/e1RM-Rekorde, und die Tonnage ist 0 (Körpergewicht unbekannt). Erste Einheit einer Übung erzeugt keine Rekorde |
 | GET/PATCH | `/workouts/:id` | |
-| POST | `/workouts/:id/exercises` | hinzufügen (`replacesWorkoutExerciseId` für „nur heute tauschen“) |
+| POST | `/workouts/:id/exercises` | hinzufügen (`replacesWorkoutExerciseId` für „nur heute tauschen“: Server-ID oder Client-ID; die ersetzte Übung wird übersprungen, die neue zeigt per `replacesWorkoutExerciseId` auf sie) |
+| DELETE | `/workouts/:id/exercises/:exerciseId` | Übung samt Sätzen entfernen (ID oder Client-ID; idempotent, Reihenfolge schließt die Lücke) |
 | PATCH | `/workouts/:id/exercises/:exerciseId` | `skipped`, `notes`, `restSeconds`, `sequence` |
 | PUT | `/workouts/:id/exercises/:exerciseId/sets` | Satz-Upsert per `clientId`, Konfliktauflösung über `updatedAt` |
 | DELETE | `/workouts/:id/sets/:setIdOrClientId` | |
@@ -70,4 +71,4 @@ Basis: `/api/v1`. Auth: `Authorization: Bearer <accessToken>` (alle Endpunkte au
 | GET | `/progress/records?exerciseId&limit&cursor` | |
 
 ### Sync
-| POST | `/sync/workouts` | `{ mutations[] }` (max. 500) → `{ applied, results[{ index, status, message? }], workouts[] }` |
+| POST | `/sync/workouts` | `{ mutations[] }` (max. 500; Arten: `start_workout`, `add_exercise`, `update_exercise`, `remove_exercise`, `upsert_set`, `delete_set`, `pause`, `resume`, `complete`, `cancel`) → `{ applied, results[{ index, status, message? }], workouts[] }` |

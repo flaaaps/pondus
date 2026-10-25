@@ -105,7 +105,8 @@ export default function WorkoutOverviewSheet() {
                   size="sm"
                   accessibilityLabel={`${ex.exerciseNameSnapshot} wiederherstellen`}
                   onPress={() => {
-                    store.skipExercise(api, ex, false)
+                    // An untouched stand-in that replaced it today goes along, so the exercise is not listed twice.
+                    store.restoreExercise(api, ex)
                     haptic("selection")
                   }}
                   hapticStyle="none"

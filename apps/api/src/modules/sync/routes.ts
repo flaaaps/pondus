@@ -60,6 +60,10 @@ export const syncRoutes: FastifyPluginAsyncZod = async app => {
           const e = resolveExercise(await workoutsService.toDto(w), m.exerciseClientId)
           return { status: "applied", workout: await workoutsService.updateExercise(userId, w.id, e.id, m.body) }
         }
+        case "remove_exercise": {
+          const w = await resolveWorkout(m.workoutClientId)
+          return { status: "applied", workout: await workoutsService.removeExercise(userId, w.id, m.exerciseClientId) }
+        }
         case "upsert_set": {
           const w = await resolveWorkout(m.workoutClientId)
           const e = resolveExercise(await workoutsService.toDto(w), m.exerciseClientId)

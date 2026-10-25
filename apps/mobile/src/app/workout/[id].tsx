@@ -50,6 +50,7 @@ import {
   type Values,
 } from "@/features/workout/selectors"
 import { useElapsed } from "@/features/workout/use-elapsed"
+import { canRemove, focusAfterRemoval, originalOf } from "@/features/workout/replacement"
 import { useExercisePicker } from "@/features/exercises/picker-store"
 import { useAllExercises } from "@/features/exercises/queries"
 import { useApi } from "@/services/session-store"
@@ -362,7 +363,7 @@ export default function ActiveWorkoutScreen() {
   const restore = (exerciseKey: string) => {
     const ex = workout.exercises.find(e => keyOf(e) === exerciseKey)
     if (!ex) return
-    store.skipExercise(api, ex, false)
+    store.restoreExercise(api, ex)
     ui.hideToast()
     ui.focusExercise(exerciseKey)
     haptic("selection")
@@ -382,10 +383,55 @@ export default function ActiveWorkoutScreen() {
     })
     router.push("/workout/pick-exercise")
   }
+  /** Dropping the warm-up is a real decision (injury risk on the first heavy set), so it asks once. */
+  const confirmSkipWarmups = (ex: WorkoutExerciseDto) => {
+    const open = ex.sets.filter(s => isWarmup(s) && !s.completed).length
+    if (!open) return
+    Alert.alert(
+      "Aufwärmen überspringen?",
+      `${open === 1 ? "Der offene Aufwärmsatz wird" : `Die ${open} offenen Aufwärmsätze werden`} entfernt und du startest direkt mit dem ersten Arbeitssatz.`,
+      [
+        { text: "Abbrechen", style: "cancel" },
+        {
+          text: "Überspringen",
+          style: "destructive",
+          onPress: () => {
+            store.skipOpenWarmups(api, ex)
+            haptic("light")
+          },
+        },
+      ],
+    )
+  }
+  /** "Zurück zu <Original>" on a stand-in: the replaced exercise comes back, the stand-in goes (or stays skipped with its logged sets). */
+  const swapBack = (standIn: WorkoutExerciseDto) => {
+    const key = store.swapBack(api, standIn)
+    if (!key) return
+    ui.hideToast()
+    ui.focusExercise(key)
+    haptic("selection")
+  }
+  const remove = (ex: WorkoutExerciseDto) =>
+    Alert.alert(`${ex.exerciseNameSnapshot} entfernen?`, "Die Übung verschwindet aus diesem Workout. Dein Plan bleibt unverändert.", [
+      { text: "Abbrechen", style: "cancel" },
+      {
+        text: "Entfernen",
+        style: "destructive",
+        onPress: () => {
+          const nextKey = focusAfterRemoval(visible, ex)
+          store.removeExercise(api, ex)
+          ui.hideToast()
+          if (focused && keyOf(focused) === keyOf(ex)) ui.focusExercise(nextKey)
+          haptic("light")
+        },
+      },
+    ])
   const exerciseOptions = (ex: WorkoutExerciseDto) => {
     const openWarmups = ex.sets.some(s => isWarmup(s) && !s.completed)
+    const original = originalOf(workout, ex)
     const items: { label: string; run: () => void; destructive?: boolean }[] = [
       { label: "Übung austauschen (nur heute)", run: () => swap(ex) },
+      ...(original ? [{ label: `Zurück zu „${original.exerciseNameSnapshot}“`, run: () => swapBack(ex) }] : []),
       {
         label: "Pause für diese Übung ändern",
         run: () =>
@@ -405,9 +451,10 @@ export default function ActiveWorkoutScreen() {
       },
       { label: "Satz hinzufügen", run: () => addSet(ex) },
       ...(openWarmups
-        ? [{ label: "Aufwärmen überspringen", run: () => store.skipOpenWarmups(api, ex) }]
+        ? [{ label: "Aufwärmen überspringen …", run: () => confirmSkipWarmups(ex) }]
         : []),
-      { label: "Übung überspringen", destructive: true, run: () => skip(ex) },
+      // Nothing logged yet: the exercise can go entirely (added by mistake, stand-in not needed). With logged sets it is skipped instead.
+      canRemove(ex) ? { label: "Übung entfernen", destructive: true, run: () => remove(ex) } : { label: "Übung überspringen", destructive: true, run: () => skip(ex) },
     ]
     ActionSheetIOS.showActionSheetWithOptions(
       {
@@ -609,6 +656,16 @@ export default function ActiveWorkoutScreen() {
   ) : null
 
   const rirSet = store.rirPendingSetKey ? findSet(store.rirPendingSetKey) : null
+  // The RIR question sits in the dock, right above the rest timer: the thumb is there anyway after "Satz ✓".
+  const rirNode =
+    rirSet && rirSet.s.completed ? (
+      <RirCard
+        setName={setName(rirSet.ex, rirSet.s)}
+        value={rirSet.s.rir}
+        onPick={rir => store.setRir(api, keyOf(rirSet.s), rir)}
+        onDismiss={() => store.setRirPending(null)}
+      />
+    ) : null
   const volume = (sets: WorkoutSetDto[]) =>
     tonnageGrams(
       sets.map(s => ({
@@ -654,14 +711,6 @@ export default function ActiveWorkoutScreen() {
         {!introSeen && focused ? (
           <IntroCard onMore={() => openGuide("logging")} onDismiss={() => setIntroSeen(true)} />
         ) : null}
-        {rirSet && rirSet.s.completed ? (
-          <RirCard
-            setName={setName(rirSet.ex, rirSet.s)}
-            value={rirSet.s.rir}
-            onPick={rir => store.setRir(api, keyOf(rirSet.s), rir)}
-            onDismiss={() => store.setRirPending(null)}
-          />
-        ) : null}
         {state === "empty" || !focused ? (
           <EmptyState
             icon="plus.circle"
@@ -697,7 +746,7 @@ export default function ActiveWorkoutScreen() {
               upNext={upNextKey === keyOf(focused) && !focused.sets.some(s => s.completed)}
               onChange={changeValues}
               onTypePress={() => chooseType(focused, selected)}
-              onSkipWarmups={() => store.skipOpenWarmups(api, focused)}
+              onSkipWarmups={() => confirmSkipWarmups(focused)}
               onSelectFirstWorking={() => {
                 const first = focused.sets.find(s => !isWarmup(s) && !s.completed)
                 if (first) ui.selectSet(keyOf(first))
@@ -831,6 +880,7 @@ export default function ActiveWorkoutScreen() {
         >
           <WorkoutDock
             toast={toastNode}
+            prompt={rirNode}
             primary={primary}
             secondary={secondary}
             compact={compact}

@@ -41,7 +41,7 @@ const RIR_OPTIONS = [
   { value: 4, label: "4+", a11y: "4 oder mehr Wiederholungen in Reserve" },
 ]
 
-/** Asked right after ticking off a working set, while resting. One compact row: label, five chips, close. */
+/** Asked right after ticking off a working set, while resting. One compact row: label, five chips, close. Lives in the dock, next to the rest timer. */
 export function RirCard({ setName, value, onPick, onDismiss }: { setName: string; value: number | null; onPick: (rir: number) => void; onDismiss: () => void }) {
   const { colors, space, radius, sizes } = useTheme()
   return (
