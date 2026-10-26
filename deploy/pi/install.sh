@@ -66,8 +66,9 @@ if podman container exists pondus_api_1 2>/dev/null; then
   echo "Stoppe podman-compose-Stack (Volume pondus_pgdata bleibt erhalten) …"
   (cd "$REPO" && podman compose down) || true
 fi
-systemctl --user enable --now pondus-db.service
-systemctl --user enable --now pondus-api.service
+# Quadlet-Units sind generiert: kein enable (WantedBy steht in der Unit), nur start.
+systemctl --user start pondus-db.service
+systemctl --user start pondus-api.service
 systemctl --user enable --now podman-auto-update.timer pondus-image-prune.timer
 
 echo
