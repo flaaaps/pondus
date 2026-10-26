@@ -55,12 +55,24 @@ src/services/         session-store (Keychain-Tokens, API-Client), settings-stor
 src/storage/          SQLite (kv + outbox), local-reducer (spiegelt Server-Mutationen), active-workout
 src/lib/              api-client, query-client (persistiert), format, haptics, uuid, env
 src/components/       Feature-Komponenten (SetRow, RestTimerBar, ExerciseList …)
+modules/rest-bell/    lokales Expo-Modul (Swift): Glocke am Pausenende über Kopfhörer, Kopfhörer-Erkennung
+scripts/              generate-rest-bell.mjs (erzeugt assets/sounds/rest-bell.wav)
 ```
 
 State-Schichten:
 1. **Server-State:** TanStack Query, persistiert in AsyncStorage (Plan, Woche, Übungen, Fortschritt offline lesbar).
 2. **Workout-State (lokal-first):** zustand-Store + SQLite. Jede Aktion → Reducer (`applyLocalMutation`) → Persist → Outbox → Flush.
 3. **Session/Settings:** zustand (+ SecureStore für Tokens, AsyncStorage für Einstellungen).
+
+## Pausenende: Glocke und Notification
+
+`rest-timer-store` (Wall-Clock-`endsAt`) gibt jede neue, verschobene oder fortgesetzte Pause an `services/rest-alert.ts`. Das Modul entscheidet:
+
+1. Glocke an, Datei im Bundle, Kopfhörer verbunden → `RestBell.arm(endsAt, …)` (natives Modul hält eine stille, mischbare Audio-Session offen und spielt die Glocke bei `endsAt`).
+2. Danach die Notification `rest-end-<endsAt>`: mit scharfer Glocke 3 s nach dem Ende mit Glocken-Ton, sonst zum Ende mit Standardton. Spielt die Glocke, entfernt das native Modul die Notification.
+3. Überspringen/Anhalten schaltet die Glocke ab, der natürliche Ablauf nicht. Route- oder Einstellungswechsel während der Pause planen beides neu.
+
+Details und Testplan: REST_BELL.md.
 
 ## Offline & Synchronisation
 

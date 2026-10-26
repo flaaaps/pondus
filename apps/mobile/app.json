@@ -32,7 +32,7 @@
       "expo-secure-store",
       "expo-font",
       ["expo-splash-screen", { "image": "./assets/splash-icon.png", "imageWidth": 160, "resizeMode": "contain", "backgroundColor": "#F4F2EE", "dark": { "backgroundColor": "#0B0C0E" } }],
-      ["expo-notifications", { "icon": "./assets/mark-dark.png", "color": "#FF7A1A" }],
+      ["expo-notifications", { "icon": "./assets/mark-dark.png", "color": "#FF7A1A", "sounds": ["./assets/sounds/rest-bell.wav"] }],
       ["expo-widgets", { "groupIdentifier": "group.app.pondus.ios" }]
     ],
     "experiments": { "typedRoutes": true }
