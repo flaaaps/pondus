@@ -47,11 +47,22 @@ Werden Kopfhörer während der Pause auf- oder abgesetzt oder ändern sich die E
 
 ### Einstellungen
 
-Profil → Pausentimer: „Glocke am Pausenende“ (Standard an) mit Lautstärke Leise/Mittel/Laut (0,4/0,7/1,0, relativ zur Systemlautstärke).
+Profil → Pausentimer: „Glocke am Pausenende“ (Standard an) mit Lautstärke Leise/Mittel/Laut (0,5/0,8/1,0, relativ zur Systemlautstärke, Standard Laut) und „Musik leiser bei der Glocke“ (Standard an).
+
+Nachtrag 26.10.2026: Über Musik war die Glocke leicht zu überhören. Deshalb ist sie jetzt lauter (siehe Glocken-Sound), der Standard steht auf „Laut“, und eine Settings-Migration (v1) hebt den alten Standard 0,7 auf 1,0. Außerdem kann Pondus die Musik für die Dauer der Glocke dämpfen.
+
+### Musik dämpfen (Ducking)
+
+Während der Pause läuft die Session nur mit `.mixWithOthers`, die Musik bleibt also unverändert. Zum Pausenende geht es so weiter:
+
+1. Category auf `.mixWithOthers` + `.duckOthers` setzen und die Session erneut aktivieren. iOS blendet andere Audio-Apps dann über einige hundert ms herunter.
+2. Die Glocke startet 0,35 s später (`play(atTime:)`), wenn die Musik schon leiser ist.
+3. 0,4 s nach dem Ende der Glocke wird die Stille-Schleife pausiert, die Session mit `.notifyOthersOnDeactivation` deaktiviert und sofort wieder gestartet. Nur so hebt iOS das Ducking wieder auf.
+4. Klappt der Neustart nicht (iOS erlaubt Audio-Start nur, solange die App noch läuft), endet die Session. Die nächste Pause aus der Live Activity bekommt dann nur die Notification, bis wieder eine Pause in der App startet. Klappt das Ducking selbst nicht, spielt die Glocke ohne.
 
 ### Glocken-Sound
 
-`apps/mobile/assets/sounds/rest-bell.wav` (1,9 s, 44,1 kHz, 16 Bit, mono, 164 KB) wird mit `node apps/mobile/scripts/generate-rest-bell.mjs` synthetisch erzeugt: additive Synthese aus zehn inharmonischen Glocken-Teiltönen auf A5 (880 Hz), jeder mit eigenem exponentiellem Abklingen, zweimal angeschlagen („ding – ding“), damit sie sich von Musik abhebt. Es ist eigenes Werk ohne fremde Samples, gemeinfrei (CC0).
+`apps/mobile/assets/sounds/rest-bell.wav` (2,4 s, 44,1 kHz, 16 Bit, mono, 207 KB) wird mit `node apps/mobile/scripts/generate-rest-bell.mjs` synthetisch erzeugt: additive Synthese aus zehn inharmonischen Glocken-Teiltönen auf A5 (880 Hz), jeder mit eigenem exponentiellem Abklingen, zweimal angeschlagen („ding – ding“), damit sie sich von Musik abhebt. Lange Ausklingzeit des Grundtons und eine weiche Sättigung (tanh) heben den Ausklang an, Spitze bei −0,3 dBFS. Das ergibt etwa −10 dB RMS statt vorher −16 dB, also rund 6 dB lauter bei gleicher Spitze. Es ist eigenes Werk ohne fremde Samples, gemeinfrei (CC0).
 
 ## 4. Risiken
 
@@ -70,7 +81,7 @@ Voraussetzung: neuer Dev-Build oder TestFlight-Build am Mac (`pnpm --filter @pon
 | 1 | AirPods verbunden, App im Vordergrund | Glocke in den AirPods bei 0:00, Haptik, kein Banner |
 | 2 | AirPods, App im Hintergrund (Home-Bildschirm) | Glocke bei 0:00, **keine** Notification danach |
 | 3 | AirPods, iPhone gesperrt, Live Activity sichtbar | Glocke bei 0:00, keine Notification. Die Live Activity wechselt ohne Öffnen der App auf „Satz ✓“, weil die App wach ist. Falls nicht, zeigt sie wie bisher „Pause vorbei“, das ist kein Fehler. |
-| 4 | Wie 3, Spotify spielt Musik | Musik läuft während der Pause ohne Unterbrechung oder Ducking weiter, die Glocke ist über der Musik gut hörbar, Spotify bleibt auf dem Sperrbildschirm „Now Playing“ |
+| 4 | Wie 3, Spotify spielt Musik, „Musik leiser“ aus | Musik läuft während der Pause ohne Unterbrechung oder Ducking weiter, die Glocke ist über der Musik gut hörbar, Spotify bleibt auf dem Sperrbildschirm „Now Playing“ |
 | 5 | Wie 3, Stummschalter an (Ring/Silent auf stumm) | Glocke trotzdem in den AirPods |
 | 6 | Keine Kopfhörer, App im Hintergrund | Wie bisher: Notification „Pause vorbei“ bei 0:00 mit Standardton, keine Glocke über den Lautsprecher |
 | 7 | AirPods, Pause läuft, AirPods während der Pause ins Case legen | Keine Glocke über den Lautsprecher. Notification bei 0:00 mit Standardton. |
@@ -84,6 +95,9 @@ Voraussetzung: neuer Dev-Build oder TestFlight-Build am Mac (`pnpm --filter @pon
 | 15 | Lautstärke Leise/Mittel/Laut | Hörbarer Unterschied, „Laut“ ist über Musik nicht unangenehm |
 | 16 | Wired/USB-C-Kopfhörer, Bluetooth-Lautsprecher | Glocke über das Gerät (Lautsprecher zählt mit, siehe 3) |
 | 17 | 10 min nach der letzten Pause | Audio-Session beendet (kein Pondus mehr in Kontrollzentrum/Audio-Indikatoren, App suspendiert) |
+| 18 | Spotify spielt, „Musik leiser bei der Glocke“ an, iPhone gesperrt | Musik wird kurz vor der Glocke leiser, die Glocke ist deutlich hörbar, danach kommt die Musik auf volle Lautstärke zurück (nicht dauerhaft gedämpft, Spotify pausiert nicht) |
+| 19 | Wie 18, danach direkt per Live Activity „Satz ✓“ eine weitere Pause | Auch diese Pause endet mit Glocke und Ducking, d. h. der Session-Neustart nach dem Ducking hat im Hintergrund geklappt |
+| 20 | Podcast statt Musik, „Musik leiser“ an | Podcast wird gedämpft, nicht pausiert, und läuft danach normal weiter |
 
 ## 6. Quellen
 

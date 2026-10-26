@@ -11,7 +11,10 @@ import UserNotifications
 /// from the Live Activity can be armed too) this module plays a silent loop on a `.playback` session
 /// with `.mixWithOthers`: Spotify or a podcast keeps playing and stays the "Now Playing" app, the
 /// silent switch is ignored (only relevant with headphones anyway), and the app keeps running. At
-/// `endsAt` a wall-clock timer plays the bell over whatever else is playing.
+/// `endsAt` a wall-clock timer plays the bell over whatever else is playing. With `duck` the other
+/// audio is turned down for the length of the bell: the session is re-activated with `.duckOthers`
+/// just before it, and deactivated with `.notifyOthersOnDeactivation` (the only way iOS lifts the
+/// ducking) and started again right after it.
 ///
 /// iOS does not let an app *start* audio from the background (`AVAudioSession.ErrorCode
 /// .cannotStartPlaying`), so the session has to be started while Pondus is in the foreground and kept
@@ -25,6 +28,7 @@ public class RestBellModule: Module {
   private struct Armed {
     let endsAtMs: Double
     let notificationId: String?
+    let duck: Bool
   }
 
   /// A bell more than this late (app was suspended, e.g. during a phone call) is not played: the
@@ -32,6 +36,10 @@ public class RestBellModule: Module {
   private static let lateToleranceMs: Double = 1500
   private static let bellResource = "rest-bell"
   private static let bellExtension = "wav"
+  /// iOS fades other audio down over a few hundred ms; the bell starts once that is mostly done.
+  private static let duckLeadTime: TimeInterval = 0.35
+  /// Other audio comes back up this long after the bell has finished.
+  private static let duckTail: TimeInterval = 0.4
 
   private let queue = DispatchQueue(label: "app.pondus.rest-bell", qos: .userInteractive)
   private var keepAlive: AVAudioPlayer?
@@ -39,6 +47,9 @@ public class RestBellModule: Module {
   private var armed: Armed?
   private var bellTimer: DispatchSourceTimer?
   private var lingerTimer: DispatchSourceTimer?
+  private var duckTimer: DispatchSourceTimer?
+  /// The session currently runs with `.duckOthers`.
+  private var ducking = false
   /// How long the session stays alive after a bell or a skipped rest, from the last `arm` call.
   private var lingerMs: Double = 0
   private var bellVolume: Float = 1
@@ -70,9 +81,10 @@ public class RestBellModule: Module {
 
     /// Schedules the bell for `endsAtMs` (Unix ms, same clock as JS `Date.now()`), replacing any
     /// earlier one. `notificationId` is the fallback notification to remove once the bell plays.
+    /// `duck` turns other audio (music, podcasts) down while the bell plays.
     /// Returns "armed" or why not: "no-headphones", "missing-sound", "too-late", "session-failed".
-    AsyncFunction("arm") { (endsAtMs: Double, volume: Double, notificationId: String?, lingerMs: Double) -> String in
-      self.arm(endsAtMs: endsAtMs, volume: volume, notificationId: notificationId, lingerMs: lingerMs)
+    AsyncFunction("arm") { (endsAtMs: Double, volume: Double, duck: Bool, notificationId: String?, lingerMs: Double) -> String in
+      self.arm(endsAtMs: endsAtMs, volume: volume, duck: duck, notificationId: notificationId, lingerMs: lingerMs)
     }
     .runOnQueue(queue)
 
@@ -93,8 +105,9 @@ public class RestBellModule: Module {
 
   // MARK: - Arming and firing
 
-  private func arm(endsAtMs: Double, volume: Double, notificationId: String?, lingerMs: Double) -> String {
+  private func arm(endsAtMs: Double, volume: Double, duck: Bool, notificationId: String?, lingerMs: Double) -> String {
     cancelBell()
+    if ducking { stopDucking() }
     self.lingerMs = max(0, lingerMs)
     bellVolume = Float(min(1, max(0, volume)))
     var isArmed = false
@@ -115,7 +128,7 @@ public class RestBellModule: Module {
     }
     isArmed = true
     cancelLinger()
-    armed = Armed(endsAtMs: endsAtMs, notificationId: notificationId)
+    armed = Armed(endsAtMs: endsAtMs, notificationId: notificationId, duck: duck)
     let timer = DispatchSource.makeTimerSource(queue: queue)
     // Wall-clock deadline, so a changed system time or a suspended stretch cannot shift it.
     timer.schedule(wallDeadline: Self.wallTime(ms: endsAtMs), leeway: .milliseconds(20))
@@ -148,16 +161,69 @@ public class RestBellModule: Module {
     }
     // After an interruption the session may be inactive; reactivating only works if iOS lets us.
     if keepAlive?.isPlaying != true { try? ensureSession() }
+    let lead = due.duck && startDucking() ? Self.duckLeadTime : 0
     bell.currentTime = 0
     bell.volume = bellVolume
-    if bell.play() {
+    let started = lead > 0 ? bell.play(atTime: bell.deviceCurrentTime + lead) : bell.play()
+    if started {
       // Only now is the bell certain, so only now does the fallback notification go.
       if let id = due.notificationId {
         UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [id])
       }
       emitBell(due, outcome: "played")
+      if ducking { scheduleUnduck(after: lead + bell.duration + Self.duckTail) }
     } else {
       emitBell(due, outcome: "failed")
+      if ducking { stopDucking() }
+    }
+  }
+
+  // MARK: - Ducking
+
+  /// Turns other audio down. Returns false if iOS refuses; the bell then plays without ducking.
+  private func startDucking() -> Bool {
+    let session = AVAudioSession.sharedInstance()
+    do {
+      try session.setCategory(.playback, mode: .default, options: [.mixWithOthers, .duckOthers])
+      // Ducking applies on activation. The session is already active (silent loop); activating it
+      // again with the new options is what turns the others down. Device test: REST_BELL.md, 18.
+      try session.setActive(true)
+      ducking = true
+      return true
+    } catch {
+      try? session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+      return false
+    }
+  }
+
+  private func scheduleUnduck(after seconds: TimeInterval) {
+    duckTimer?.cancel()
+    let timer = DispatchSource.makeTimerSource(queue: queue)
+    timer.schedule(deadline: .now() + .milliseconds(Int(seconds * 1000)))
+    timer.setEventHandler { [weak self] in self?.stopDucking() }
+    timer.resume()
+    duckTimer = timer
+  }
+
+  /// Brings other audio back up. iOS lifts ducking only when the ducking session deactivates, so the
+  /// silent loop pauses, the session goes inactive with `.notifyOthersOnDeactivation` and starts again
+  /// at once. The app is still running at that point, which is what iOS requires to start audio. If
+  /// it refuses anyway, the session ends: the next rest falls back to the notification until one is
+  /// started in the app again.
+  private func stopDucking() {
+    duckTimer?.cancel()
+    duckTimer = nil
+    guard ducking else { return }
+    ducking = false
+    let session = AVAudioSession.sharedInstance()
+    bell?.stop()
+    keepAlive?.pause()
+    try? session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+    try? session.setActive(false, options: .notifyOthersOnDeactivation)
+    do {
+      try ensureSession()
+    } catch {
+      releaseSession()
     }
   }
 
@@ -176,8 +242,9 @@ public class RestBellModule: Module {
   /// Activates the mixable playback session and starts the silent keep-alive loop.
   private func ensureSession() throws {
     let session = AVAudioSession.sharedInstance()
-    if session.category != .playback || !session.categoryOptions.contains(.mixWithOthers) {
-      try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+    let options: AVAudioSession.CategoryOptions = ducking ? [.mixWithOthers, .duckOthers] : [.mixWithOthers]
+    if session.category != .playback || session.categoryOptions != options {
+      try session.setCategory(.playback, mode: .default, options: options)
     }
     try session.setActive(true)
     if keepAlive == nil {
@@ -212,6 +279,9 @@ public class RestBellModule: Module {
   private func releaseSession() {
     cancelBell()
     cancelLinger()
+    duckTimer?.cancel()
+    duckTimer = nil
+    ducking = false
     keepAlive?.stop()
     keepAlive = nil
     bell?.stop()

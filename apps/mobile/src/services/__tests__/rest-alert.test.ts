@@ -3,7 +3,7 @@ import type { BellArmResult } from "../../../modules/rest-bell"
 
 const NOW = 1_800_000_000_000
 const ENDS_AT = NOW + 90_000
-const ON: RestAlertSettings = { notifications: true, bell: true, bellVolume: 0.7 }
+const ON: RestAlertSettings = { notifications: true, bell: true, bellVolume: 0.7, bellDuck: true }
 
 function fakeBell({ headphones = true, available = true, arm = "armed" as BellArmResult | Error } = {}) {
   const calls: string[] = []
@@ -76,7 +76,7 @@ describe("createRestAlert.schedule", () => {
     const { bell, calls } = fakeBell()
     const { alert, scheduled } = setup(bell)
     await expect(alert.schedule(ENDS_AT, "Squat")).resolves.toEqual({ notificationId: restNotificationId(ENDS_AT), bell: "armed" })
-    expect(bell.arm).toHaveBeenCalledWith(ENDS_AT, 0.7, restNotificationId(ENDS_AT), BELL_LINGER_MS)
+    expect(bell.arm).toHaveBeenCalledWith(ENDS_AT, 0.7, true, restNotificationId(ENDS_AT), BELL_LINGER_MS)
     expect(calls).toEqual([`arm ${ENDS_AT}`])
     expect(scheduled).toEqual([{ identifier: restNotificationId(ENDS_AT), seconds: 93, sound: BELL_SOUND_FILE, label: "Squat" }])
   })
@@ -124,7 +124,7 @@ describe("createRestAlert.schedule", () => {
     const { bell } = fakeBell()
     const { alert, scheduled } = setup(bell, { ...ON, notifications: false })
     await expect(alert.schedule(ENDS_AT, null)).resolves.toEqual({ notificationId: null, bell: "armed" })
-    expect(bell.arm).toHaveBeenCalledWith(ENDS_AT, 0.7, null, BELL_LINGER_MS)
+    expect(bell.arm).toHaveBeenCalledWith(ENDS_AT, 0.7, true, null, BELL_LINGER_MS)
     expect(scheduled).toEqual([])
   })
 
@@ -134,6 +134,12 @@ describe("createRestAlert.schedule", () => {
     void alert.schedule(ENDS_AT, null)
     alert.cancel()
     expect(calls).toEqual([`arm ${ENDS_AT}`, "disarm"])
+  })
+
+  it("passes the ducking setting through", async () => {
+    const { bell } = fakeBell()
+    await setup(bell, { ...ON, bellDuck: false }).alert.schedule(ENDS_AT, null)
+    expect(bell.arm).toHaveBeenCalledWith(ENDS_AT, 0.7, false, restNotificationId(ENDS_AT), BELL_LINGER_MS)
   })
 
   it("release ends the session", () => {

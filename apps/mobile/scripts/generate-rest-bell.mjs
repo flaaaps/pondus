@@ -12,16 +12,16 @@ import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 
 const RATE = 44100
-const LENGTH_S = 1.9
+const LENGTH_S = 2.4
 const STRIKE_FREQ = 880 // A5: bright enough to cut through music without being shrill
 /** [frequency ratio, amplitude, decay time constant in s]. Inharmonic ratios as in a church/hand bell. */
 const PARTIALS = [
   [0.5, 0.1, 1.4], // hum
-  [1.0, 1.0, 1.1], // prime (strike tone)
-  [1.002, 0.35, 1.1], // slightly detuned twin: slow shimmer
+  [1.0, 1.0, 1.6], // prime (strike tone), long sustain so it stays audible over music
+  [1.002, 0.35, 1.6], // slightly detuned twin: slow shimmer
   [1.19, 0.3, 0.75], // minor third (tierce) gives the "bell" colour
   [1.5, 0.22, 0.55], // quint
-  [2.0, 0.4, 0.45], // nominal
+  [2.0, 0.45, 0.7], // nominal: the "presence" range that cuts through a mix
   [2.51, 0.16, 0.28],
   [2.66, 0.1, 0.24],
   [3.01, 0.08, 0.18],
@@ -30,11 +30,13 @@ const PARTIALS = [
 /** [start time in s, gain] of each strike. */
 const STRIKES = [
   [0.0, 1.0],
-  [0.42, 0.8],
+  [0.42, 0.9],
 ]
 const ATTACK_S = 0.003
 const FADE_OUT_S = 0.15
-const PEAK = 10 ** (-1 / 20) // normalise to -1 dBFS
+const PEAK = 10 ** (-0.3 / 20) // normalise to -0.3 dBFS
+/** Soft saturation (tanh) lifts the decaying tail relative to the strike: louder without clipping. */
+const DRIVE = 2
 
 const n = Math.round(RATE * LENGTH_S)
 const samples = new Float64Array(n)
@@ -52,6 +54,9 @@ const fadeStart = n - Math.round(FADE_OUT_S * RATE)
 for (let i = fadeStart; i < n; i++) samples[i] *= 0.5 + 0.5 * Math.cos((Math.PI * (i - fadeStart)) / (n - fadeStart))
 
 let max = 0
+for (const s of samples) max = Math.max(max, Math.abs(s))
+for (let i = 0; i < n; i++) samples[i] = Math.tanh((DRIVE * samples[i]) / max)
+max = 0
 for (const s of samples) max = Math.max(max, Math.abs(s))
 const pcm = Buffer.alloc(n * 2)
 for (let i = 0; i < n; i++) pcm.writeInt16LE(Math.round((samples[i] / max) * PEAK * 32767), i * 2)

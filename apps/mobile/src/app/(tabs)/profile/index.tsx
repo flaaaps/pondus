@@ -101,14 +101,21 @@ export default function ProfileScreen() {
             trailing={<Switch accessibilityLabel="Glocke am Pausenende, bei Kopfhörern" value={settings.restBell} onValueChange={settings.setRestBell} trackColor={{ true: colors.accent }} />}
           />
           {settings.restBell ? (
-            <ListRow
-              title="Lautstärke"
-              trailing={
-                <View style={{ width: 210 }}>
-                  <SegmentedControl options={[...BELL_VOLUMES]} value={nearestBellVolume(settings.restBellVolume)} onChange={v => settings.setRestBellVolume(Number(v))} />
-                </View>
-              }
-            />
+            <>
+              <ListRow
+                title="Lautstärke"
+                trailing={
+                  <View style={{ width: 210 }}>
+                    <SegmentedControl options={[...BELL_VOLUMES]} value={nearestBellVolume(settings.restBellVolume)} onChange={v => settings.setRestBellVolume(Number(v))} />
+                  </View>
+                }
+              />
+              <ListRow
+                title="Musik leiser bei der Glocke"
+                subtitle="Spotify, Podcasts & Co. werden kurz gedämpft"
+                trailing={<Switch accessibilityLabel="Musik leiser bei der Glocke" value={settings.restBellDuck} onValueChange={settings.setRestBellDuck} trackColor={{ true: colors.accent }} />}
+              />
+            </>
           ) : null}
           <ListRow
             title="Standardpause"

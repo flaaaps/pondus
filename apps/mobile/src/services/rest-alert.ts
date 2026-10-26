@@ -23,8 +23,8 @@ export const BELL_GRACE_MS = 3000
 export const BELL_LINGER_MS = 10 * 60 * 1000
 
 export const BELL_VOLUMES = [
-  { value: "0.4", label: "Leise" },
-  { value: "0.7", label: "Mittel" },
+  { value: "0.5", label: "Leise" },
+  { value: "0.8", label: "Mittel" },
   { value: "1", label: "Laut" },
 ] as const
 
@@ -33,6 +33,8 @@ export interface RestAlertSettings {
   bell: boolean
   /** 0…1, relative to the system volume. */
   bellVolume: number
+  /** Turn music and podcasts down while the bell plays. */
+  bellDuck: boolean
 }
 
 export type BellPort = Pick<RestBellModule, "isAvailable" | "headphonesConnected" | "arm" | "disarm" | "release">
@@ -112,7 +114,7 @@ export function createRestAlert(deps: RestAlertDeps) {
       let bell: BellState = "off"
       if (deps.bell && shouldTryBell(settings, env())) {
         try {
-          bell = await deps.bell.arm(endsAt, settings.bellVolume, settings.notifications ? restNotificationId(endsAt) : null, BELL_LINGER_MS)
+          bell = await deps.bell.arm(endsAt, settings.bellVolume, settings.bellDuck, settings.notifications ? restNotificationId(endsAt) : null, BELL_LINGER_MS)
         } catch {
           bell = "session-failed"
         }
