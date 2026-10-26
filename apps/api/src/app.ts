@@ -87,7 +87,8 @@ export async function buildApp(opts: BuildAppOptions): Promise<App> {
   await app.register(authPlugin, { accessSecret: env.JWT_ACCESS_SECRET, accessTtl: env.ACCESS_TOKEN_TTL })
   await app.register(idempotency)
 
-  app.get("/health", { schema: { tags: ["meta"], security: [] } }, async () => ({ status: "ok", time: new Date().toISOString() }))
+  // `version` is the git commit the image was built from (APP_VERSION build arg), "dev" otherwise: shows which build the Pi runs.
+  app.get("/health", { schema: { tags: ["meta"], security: [] } }, async () => ({ status: "ok", time: new Date().toISOString(), version: process.env.APP_VERSION ?? "dev" }))
 
   await app.register(
     async api => {

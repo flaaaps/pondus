@@ -1,0 +1,32 @@
+# Quadlet-Unit für die API. Folgt dem Tag :prod in GitHub Packages; `podman auto-update`
+# (Timer, siehe install.sh) zieht ein neues Image, startet den Container neu und rollt
+# zurück, wenn der neue Container nicht gesund wird.
+[Unit]
+Description=Pondus API
+Requires=pondus-db.service
+After=pondus-db.service
+
+[Container]
+ContainerName=pondus-api
+Image=ghcr.io/flaaaps/pondus-api:prod
+AutoUpdate=registry
+Network=pondus.network
+EnvironmentFile=%h/projects/pondus/.env
+Environment=NODE_ENV=production
+Environment=HOST=0.0.0.0
+Environment=PORT=4010
+# DATABASE_URL steht in .env (install.sh legt die Zeile aus POSTGRES_PASSWORD an).
+PublishPort=127.0.0.1:4010:4010
+HealthCmd=wget -qO- http://127.0.0.1:4010/health
+HealthInterval=30s
+HealthTimeout=3s
+HealthRetries=3
+HealthStartPeriod=30s
+Notify=healthy
+
+[Service]
+Restart=always
+TimeoutStartSec=180
+
+[Install]
+WantedBy=default.target

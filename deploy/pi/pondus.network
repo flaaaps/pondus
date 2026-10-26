@@ -1,0 +1,3 @@
+# Quadlet: eigenes Netz für den Pondus-Stack (DNS zwischen den Containern über den Containernamen).
+[Network]
+NetworkName=pondus
