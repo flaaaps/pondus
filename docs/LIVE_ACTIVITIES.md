@@ -26,9 +26,9 @@ Gewichte werden mit der Einheit aus den Einstellungen formatiert (kg/lb). Bei un
 ### Interaktion
 
 - **Stufe 1 (MVP):** reine Anzeige. Antippen öffnet die App per Deep Link `pondus://workout/<id>`.
-- **Stufe 2:** Buttons auf dem Sperrbildschirm und in der erweiterten Dynamic Island. Es gibt immer nur eine Aktion (Entscheidung vom 25.10.2026, siehe 12):
-  - **„Satz ✓“** hakt den nächsten offenen Satz mit den vorgeschlagenen Werten ab und startet die Pause, genau wie der große Button im Workout-Screen. Nur sichtbar und wirksam, wenn keine Pause läuft.
-  - **„Pause überspringen“** (mit Icon) ist während einer Pause der einzige Button und beendet sie sofort. Pause verkürzen oder verlängern geht nur in der App.
+- **Stufe 2:** Buttons auf dem Sperrbildschirm und in der erweiterten Dynamic Island (Entscheidung vom 26.10.2026, siehe 12):
+  - **„Satz ✓“** hakt den nächsten offenen Satz mit den vorgeschlagenen Werten ab und startet die Pause, genau wie der große Button im Workout-Screen. Immer sichtbar, solange ein Satz offen ist, auch während der Pause (dann endet die laufende Pause und die nächste beginnt).
+  - **„Pause überspringen“** (mit Icon) steht während einer Pause daneben und beendet sie sofort. Pause verkürzen oder verlängern geht nur in der App.
   - **RIR-Abfrage:** Nach „Satz ✓“ erscheint wie in der App eine Reihe mit **„0“, „1“, „2“, „3“, „4+“**. Ein Tap speichert die Wiederholungen in Reserve für genau diesen Satz. Die Abfrage ist optional und verschwindet, sobald sie beantwortet ist oder der nächste Satz abgehakt wird. Für Aufwärmsätze und Sätze bis zum Versagen gibt es keine Abfrage, wie in der App.
 - Gewicht und Wiederholungen ändern bleibt in der App. Live Activities erlauben keine Texteingabe, und Stepper auf dem Sperrbildschirm wären fehleranfällig.
 
@@ -96,10 +96,12 @@ Nachtrag 26.10.2026: Mit Kopfhörern und eingeschalteter Glocke (REST_BELL.md) h
 
 - **Pause:** `Text(timerInterval: restStartedAt...restEndsAt, countsDown: true)` plus `ProgressView(timerInterval:)`. Der Countdown bleibt bei 0:00 stehen.
 - **Workout-Dauer:** `Text(timerInterval: effectiveStart...effectiveStart+12h)` zählt hoch. `effectiveStart` ist `startedAt + pausedSeconds`. Bei pausiertem Workout friert `pauseTime` die Anzeige ein.
-- **Pausenende:** `staleDate = restEndsAt`. Ist `isStale` gesetzt, zeigt die Komponente „Pause vorbei · Weiter mit Satz 3“. Laut Forenberichten feuert `staleDate` teils verspätet und erst ab etwa 2 Minuten Abstand. Deshalb gilt:
-  - Der Countdown bei 0:00 ist das verlässliche Signal.
-  - Die bestehende lokale Notification „Pause vorbei“ bleibt der Alarm.
+- **Pausenende:** `staleDate = restEndsAt`. Ist `isStale` gesetzt, zeigt die Komponente „Pause vorbei“. **Am Gerät bestätigt (26.10.2026):** iOS rendert die Activity zum `staleDate` oft gar nicht oder erst Minuten später neu, solange die App schläft. Der Countdown steht dann bei 0:00, der Balken bleibt leer, und die Activity sieht weiter nach „Pause“ aus. Deshalb gilt:
+  - Kein Bedienelement darf vom Stale-Übergang abhängen: „Satz ✓“ ist auch während der Pause da (siehe 1 und 12).
+  - Der Countdown bei 0:00 ist das verlässliche Signal, „Pause vorbei“ nur ein Bonus.
+  - Die bestehende lokale Notification „Pause vorbei“ bleibt der Alarm. Ein Fokus-Modus unterdrückt sie samt Ton; die Activity selbst zeigt iOS auch im Fokus (Geräte-Beobachtung, nicht dokumentiert). Die Glocke über Kopfhörer (eigenes Feature, Branch `feat/rest-bell`) ist davon unabhängig.
   - Kommt die App in den Vordergrund, schreibt sie den korrekten Zustand sofort.
+  - Der einzige Weg, die Activity exakt zum Pausenende umzuschalten, ist ein Push-Update über APNs, das der Server zum Zeitpunkt `endsAt` sendet. Das ist der nächste Ausbauschritt (Abschnitt 9).
 
 ### 3.4 Grenzen
 
@@ -194,11 +196,11 @@ Der Spike hat gezeigt: Das Banner hat etwa 160 pt. Wird es höher, beschneidet i
 │ Übung 2 von 6 · Satz 3 von 4 · 32:10         │
 │ ████████████████████████░░░░░░░░             │
 │ 80 kg × 8  ·  Zuletzt 80 kg × 8 · RIR 2      │
-│ [ ⏭ Pause überspringen ]                     │  ← Stufe 2, ohne Pause: [ Satz ✓ ]
+│ [ Satz ✓ ] [ ⏭ Pause überspringen ]          │  ← Stufe 2, ohne Pause nur: [ Satz ✓ ]
 └──────────────────────────────────────────────┘
 ```
 
-Direkt nach „Satz ✓“ mit offener RIR-Abfrage (Stufe 2) ersetzt eine einzeilige RIR-Reihe den Button „Pause überspringen“:
+Direkt nach „Satz ✓“ mit offener RIR-Abfrage (Stufe 2) ersetzt eine einzeilige RIR-Reihe die Button-Zeile; rechts außen bleibt ein kompaktes „✓“ für den nächsten Satz:
 
 ```
 ┌──────────────────────────────────────────────┐
@@ -213,7 +215,7 @@ Direkt nach „Satz ✓“ mit offener RIR-Abfrage (Stufe 2) ersetzt eine einzei
 - **Keine Kopfzeile:** Der Workout-Name steht nicht im Banner. Die Workout-Dauer zählt in der Fortschrittszeile hoch.
 - **Countdown rechts oben** in Akzentfarbe, 28 pt. Ohne Pause steht dort „Bereit“, nach Ablauf „Pause vorbei“.
 - **Fortschrittsbalken** nur bei laufender Pause. `ProgressView` mit `timerInterval` zeigt sonst zusätzlich die Restzeit als Text, deshalb immer mit `labelsHidden()`.
-- **RIR-Abfrage ohne Fragetext**, nur „RIR“ und fünf Buttons. „Pause überspringen“ fehlt in dieser Zeit, die Pause läuft weiter. Wird die Pause in der App beendet, bevor RIR beantwortet ist, verschwindet die Abfrage, und der Wert bleibt leer wie beim Ignorieren in der App.
+- **RIR-Abfrage ohne Fragetext**, nur „RIR“, fünf Buttons und rechts ein kompaktes „✓“ (nächster Satz). „Pause überspringen“ fehlt in dieser Zeit, die Pause läuft weiter. Wird die Pause in der App beendet, bevor RIR beantwortet ist, verschwindet die Abfrage, und der Wert bleibt leer wie beim Ignorieren in der App.
 - **Ohne laufende Pause** entfällt der Balken, und „Satz ✓“ ist der Hauptbutton. Bei pausiertem Workout steht „Workout pausiert“ statt der Fortschrittszeile, und die Dauer ist eingefroren.
 - **Lange Texte** werden einzeilig gekürzt, nicht umgebrochen. Das gilt vor allem für den Übungsnamen.
 
@@ -339,11 +341,11 @@ Umgesetzt und im Simulator geprüft: Start beim aktiven Workout, Updates nur bei
 
   | Target | Aktion |
   | --- | --- |
-  | `complete-set` | `completeNextSet()` mit `advanceFocus`, danach Auswahl im Editor zurücksetzen; ignoriert, solange eine Pause läuft |
+  | `complete-set` | `completeNextSet()` mit `advanceFocus`, danach Auswahl im Editor zurücksetzen; auch während einer Pause (sie wird durch die nächste ersetzt) |
   | `rest-done` | „Pause überspringen“: `rest.stop()`, auch wenn die Pause schon abgelaufen ist, iOS die Activity aber noch nicht als „stale“ markiert hat |
   | `rir-0` … `rir-4` | `setRir(rirPendingSetKey, n)`; „4+“ speichert 4 wie in der App |
 
-- **Buttons im Layout:** Immer nur eine Aktion. Während der Pause „Pause überspringen“ mit Icon, ohne Pause „Satz ✓“. Ist eine RIR-Abfrage offen und läuft die Pause, steht dort stattdessen die RIR-Reihe. Ist die Pause vorbei, kommt „Satz ✓“ zurück. VoiceOver-Labels für alle Buttons. Die erste Fassung hatte während der Pause „Satz ✓ · −15 s · +15 s · Fertig“, das war zu unruhig.
+- **Buttons im Layout:** „Satz ✓“ immer, solange ein Satz offen ist; während der Pause daneben „Pause überspringen“ mit Icon. Ist eine RIR-Abfrage offen und läuft die Pause, steht dort die RIR-Reihe mit einem kompakten „✓“ rechts. VoiceOver-Labels für alle Buttons. Die erste Fassung hatte während der Pause „Satz ✓ · −15 s · +15 s · Fertig“ (zu unruhig), die zweite nur „Pause überspringen“ (hing am unzuverlässigen Stale-Übergang, siehe 3.3).
 - **Gleicher Satz in App und Activity:** `upcomingSet()` in `selectors.ts` bestimmt den Satz für „Satz ✓“, auch wenn die fokussierte Übung schon fertig ist. Dann wechselt der Fokus mit.
 - **Veraltete Taps:** Taps verwerfen, deren `source` nicht die aktuelle Activity ist. RIR-Taps zählen nur, wenn die offene Abfrage in der App dieselbe ist wie die zuletzt gesendete.
 - **Entprellung:** „Satz ✓“ und RIR innerhalb von 1 Sekunde nur einmal. Im Simulator gefunden: Die RIR-Reihe ersetzt „Satz ✓“ an derselben Stelle, und die zweite Hälfte eines Doppeltaps landete auf „0“. RIR-Taps innerhalb von 1 Sekunde nach „Satz ✓“ zählen deshalb nicht.
@@ -361,7 +363,7 @@ Umgesetzt und im Simulator geprüft: Start beim aktiven Workout, Updates nur bei
 ## 9. Spätere Erweiterungen
 
 - **AlarmKit (iOS 26+):** ein echter Alarm zum Pausenende, der Stummschaltung und Fokus ignoriert. Er bringt eine eigene, zweite Live Activity mit und braucht Swift-Code. Sinnvoll, falls Nutzer die Notification überhören. Mit Kopfhörern deckt das inzwischen die Glocke ab (REST_BELL.md).
-- **Push-Updates:** würden den Wechsel auf „Pause vorbei“ exakt zum Pausenende ermöglichen, auch bei suspendierter App. Dafür bräuchte die API einen APNs-Schlüssel und einen Job pro Pause. Der Nutzen ist gering, solange Countdown und Notification das abdecken.
+- **Push-Updates (nächster Schritt):** der einzige Weg, die Activity exakt zum Pausenende umzuschalten („Pause vorbei“, Balken weg, RIR-Reihe zu), auch bei suspendierter App und im Fokus-Modus, weil iOS den `staleDate` nicht zuverlässig rendert (3.3). Nötig: APNs-Auth-Key (.p8) im Developer-Portal, die App meldet das Push-Token der Activity an die API (`getPushToken()`/`addPushTokenListener()`), die API plant pro Pause einen Job zu `endsAt` und schickt ein `liveactivity`-Push mit den neuen Props. Da die API jetzt automatisch deployed wird, ist das etwa 1 bis 2 Tage Arbeit.
 - **Home-Screen-Widget** „Nächstes Training“ mit derselben Technik.
 - **Apple Watch:** eigener Layout-Zweig für `bannerSmall` ist schon vorgesehen; Buttons gibt es dort nicht.
 
@@ -412,7 +414,7 @@ Umgesetzt und im Simulator geprüft: Start beim aktiven Workout, Updates nur bei
 
 ## 12. Entscheidungen (25.10.2026)
 
-1. **Eine Aktion zur Zeit:** Während der Pause nur „Pause überspringen“, „Satz ✓“ nur ohne Pause. Ursprünglich waren „−15 s“, „+15 s“ und „Fertig“ wie in der App geplant; im Test wirkte das zu unruhig (geändert am 25.10.2026).
+1. **„Satz ✓“ immer, „Pause überspringen“ nur während der Pause** (geändert am 26.10.2026). Davor galt „eine Aktion zur Zeit“: Während der Pause nur „Pause überspringen“, „Satz ✓“ erst nach dem Stale-Übergang. Am Gerät blieb die Activity nach dem Pausenende aber minutenlang im Pause-Zustand, weil iOS den `staleDate` nicht zuverlässig rendert, und der nächste Satz ließ sich nicht abhaken. Ursprünglich waren „−15 s“, „+15 s“ und „Fertig“ wie in der App geplant; im Test wirkte das zu unruhig (25.10.2026).
 2. **RIR wird auf dem Sperrbildschirm abgefragt:** nach „Satz ✓“ mit den Buttons „0“ bis „4+“, nach denselben Regeln wie in der App.
 3. **Weg 1:** Seltene verlorene Taps bei beendeter App sind akzeptiert, kein Swift-Fallback von Anfang an.
 4. **Standardmäßig an,** mit Schalter in den Einstellungen.

@@ -62,7 +62,6 @@ const handleTap = createActivityActionHandler({
   currentActivityId: () => controller?.activityId() ?? null,
   shownRirSetKey: () => controller?.shownProps()?.rirPrompt?.setKey ?? null,
   pendingRirSetKey: () => useActiveWorkoutStore.getState().rirPendingSetKey,
-  restRunning: () => (useRestTimerStore.getState().endsAt ?? 0) > Date.now(),
   restSet: () => useRestTimerStore.getState().endsAt !== null,
   completeNextSet: () => {
     const { defaultRestSeconds } = useSettingsStore.getState()

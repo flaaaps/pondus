@@ -15,8 +15,6 @@ export interface ActivityActionDeps {
   shownRirSetKey: () => string | null
   /** Set whose RIR question is open in the app. */
   pendingRirSetKey: () => string | null
-  /** A rest is counting down right now. */
-  restRunning: () => boolean
   /** A rest is set, possibly already run out while the app was suspended. */
   restSet: () => boolean
   completeNextSet: () => void
@@ -31,7 +29,8 @@ const REPEAT_WINDOW_MS = 1000
 
 /**
  * Maps a button tap to a store action. The activity then updates through the normal store
- * subscriptions. During a rest the activity offers only "skip", a set is ticked off without one.
+ * subscriptions. "Satz ✓" also works during a rest (it ends that rest and starts the next one),
+ * because iOS may keep showing the rest look past its end while the app sleeps.
  */
 export function createActivityActionHandler(deps: ActivityActionDeps) {
   const lastTap = new Map<"complete" | "rir", number>()
@@ -46,7 +45,6 @@ export function createActivityActionHandler(deps: ActivityActionDeps) {
     const target = tap.target as ActivityTarget
     if (target === "complete-set") {
       if (isRepeat("complete", tap.timestamp)) return "repeat"
-      if (deps.restRunning()) return "ignored"
       deps.completeNextSet()
       return "done"
     }

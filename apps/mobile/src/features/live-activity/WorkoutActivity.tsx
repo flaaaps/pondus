@@ -44,8 +44,13 @@ export const workoutActivityLayout: LiveActivityComponent<WorkoutActivityProps> 
     )
 
   // Buttons (iOS 17+): their taps reach the app via addUserInteractionListener, see actions.ts.
-  // One action at a time: during a rest only "skip" (or the open RIR question), otherwise "Satz ✓".
+  // "Satz ✓" is always there while a set is open, also during the rest: iOS re-renders the activity
+  // at the stale date (rest end) late or not at all while the app sleeps, so the countdown may sit at
+  // 0:00 with the "rest" look for minutes. The lifter must still be able to tick off the next set.
   const small = [buttonStyle("bordered"), controlSize("small")]
+  const complete = <Button target="complete-set" label="Satz ✓" modifiers={[buttonStyle("borderedProminent"), controlSize("small"), tint(accent), accessibilityLabel("Satz abhaken")]} />
+  // Compact variant next to the RIR row (an empty label with systemImage renders a Label with a blank title).
+  const completeIcon = <Button target="complete-set" label="✓" modifiers={[buttonStyle("borderedProminent"), controlSize("small"), tint(accent), accessibilityLabel("Satz abhaken")]} />
   const buttonRow =
     props.status !== "running" && props.status !== "done" ? null : props.rirPrompt !== null && resting ? (
       <HStack spacing={6}>
@@ -55,11 +60,16 @@ export const workoutActivityLayout: LiveActivityComponent<WorkoutActivityProps> 
         <Button target="rir-2" label="2" modifiers={[...small, accessibilityLabel("2 Wiederholungen in Reserve")]} />
         <Button target="rir-3" label="3" modifiers={[...small, accessibilityLabel("3 Wiederholungen in Reserve")]} />
         <Button target="rir-4" label="4+" modifiers={[...small, accessibilityLabel("4 oder mehr Wiederholungen in Reserve")]} />
+        <Spacer />
+        {props.canComplete ? completeIcon : null}
       </HStack>
     ) : resting ? (
-      <Button target="rest-done" label="Pause überspringen" systemImage="forward.end.fill" modifiers={small} />
+      <HStack spacing={8}>
+        {props.canComplete ? complete : null}
+        <Button target="rest-done" label="Pause überspringen" systemImage="forward.end.fill" modifiers={small} />
+      </HStack>
     ) : props.canComplete ? (
-      <Button target="complete-set" label="Satz ✓" modifiers={[buttonStyle("borderedProminent"), controlSize("small"), tint(accent), accessibilityLabel("Satz abhaken")]} />
+      complete
     ) : null
 
   return {
