@@ -100,6 +100,7 @@ Nachtrag 26.10.2026: Mit Kopfhörern und eingeschalteter Glocke (REST_BELL.md) h
   - Der Countdown bei 0:00 ist das verlässliche Signal.
   - Die bestehende lokale Notification „Pause vorbei“ bleibt der Alarm.
   - Kommt die App in den Vordergrund, schreibt sie den korrekten Zustand sofort.
+  - **Beobachtung am Gerät (26.10.2026):** Nach „−15 s“ in der App bleibt die Activity nach dem (vorgezogenen) Pausenende im Pause-Zustand und bietet „Satz ✓“ nicht an. Ohne Verkürzung funktioniert der Übergang. Verdacht: Das Update verschiebt `timerInterval` und `staleDate` nach vorn; `Text(timerInterval:)` und der Stale-Übergang folgen dem neuen Ende nicht zuverlässig (SwiftUI behält die Ansicht mit dem alten Intervall). Zu prüfen: nach „−15 s“ ein Update mit einem *neuen* Timer-Element erzwingen (andere Identität) oder die Pause statt per Update per `end` + neuem `start` ersetzen; Vergleich mit „+15 s“.
 
 ### 3.4 Grenzen
 
