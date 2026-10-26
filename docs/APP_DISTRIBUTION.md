@@ -1,6 +1,6 @@
 # Pondus – App-Verteilung ohne MacBook
 
-Stand: 25.10.2026. Status: ⬜ Plan, nichts eingerichtet. Workflow-Entwurf liegt deaktiviert unter `.github/workflows/ios-testflight.yml.disabled`.
+Stand: 26.10.2026. Status: 🟡 Einrichtung erledigt (Phase 1, ohne MacBook), erster CI-Lauf offen. Workflow: `.github/workflows/ios-testflight.yml`.
 
 Ziel: Neue App-Versionen kommen auf Julians iPhone, ohne dass das MacBook laufen muss. Ein Build startet automatisch (Tag oder Knopf in GitHub), installiert wird über einen Link bzw. die TestFlight-App. Reine JS-Änderungen sollen später auch ohne neuen nativen Build ankommen.
 
@@ -13,7 +13,8 @@ Ziel: Neue App-Versionen kommen auf Julians iPhone, ohne dass das MacBook laufen
 | App | `apps/mobile`, Expo SDK 58, RN 0.88, iOS-only, Continuous Native Generation: `ios/` ist nicht eingecheckt und wird mit `expo prebuild` erzeugt |
 | Native Teile | `expo-dev-client` (nur Debug), `expo-widgets` mit Widget-Extension `ExpoWidgetsTarget` (`app.pondus.ios.ExpoWidgetsTarget`), App Group `group.app.pondus.ios`, `expo-notifications`, `expo-sqlite`, `expo-secure-store` |
 | Bundle-ID | `app.pondus.ios`, Version `0.1.0` in `app.json`, keine `buildNumber` gesetzt |
-| Apple-Team | `XTA9CPY447`. App-ID der Extension existiert, App Group ist beiden App-IDs zugewiesen (siehe `LIVE_ACTIVITIES.md`, Abschnitt 6) |
+| Apple-Team | `XTA9CPY447`, Organisation „studypilot UG (haftungsbeschränkt)“, geteilt mit studypilot. App-IDs `app.pondus.ios` (App Groups, Push) und `app.pondus.ios.ExpoWidgetsTarget` (App Groups) |
+| App Store Connect | App-Eintrag „Pondus - Krafttraining“, Apple-ID `6827056782`, SKU `pondus-ios` |
 | Builds bisher | lokal auf dem MacBook mit Xcode 26.6: `pnpm prebuild && pnpm ios`, Release-Build per Kabel aufs iPhone 15 Pro (iOS 27.2) |
 | API-URL | wird beim Bundling aus `EXPO_PUBLIC_API_URL` eingebacken (`src/lib/env.ts`). Backend nur im Tailnet: `https://jupi.tail0ee0a3.ts.net:4010` |
 | Repo | `github.com/flaaaps/pondus`, **öffentlich**. Bestehende Actions: `web.yml` (Homepage auf GitHub Pages) |
@@ -161,9 +162,20 @@ Gleicher Auslöser in GitHub Actions, aber nur ein kleiner Ubuntu-Job: `eas buil
 ### Phase 0 – Klärung ⬜ (15 min)
 Offene Fragen 1–3 aus Abschnitt 9 beantworten. Keine davon blockiert den Plan, sie bestimmen nur Kleinigkeiten (Rollen, App-Name).
 
-### Phase 1 – Einmalige Einrichtung auf dem Mac und bei Apple ⬜ (1–2 h, Julian)
+### Phase 1 – Einmalige Einrichtung bei Apple ✅ (26.10.2026, ohne MacBook)
 
-Alles Folgende macht Julian. Kein Schritt braucht den Pi.
+**So wurde es gemacht:** Julian hat vom iPhone aus den App-Eintrag angelegt und zwei Team-API-Keys erzeugt: Admin `6V5242YH2A` nur für die Einrichtung, App Manager `HT4G76T9HV` für die CI. Die `.p8` liegen in Infisical (Projekt „studypilot“, `prod`) als `PONDUS_ADMIN` und `PONDUS_MANAGER`, die IDs als `PONDUS_ADMIN_KEY_ID`, `PONDUS_MANAGER_KEY_ID` und `PONDUS_ASC_ISSUER_ID`. Den Rest hat Claude vom Pi aus über die App Store Connect API erledigt:
+
+- **Zertifikat:** Privater Schlüssel und CSR wurden mit `openssl` erzeugt. Das Team hatte schon die maximal 3 Distribution-Zertifikate. Das von keinem Profil genutzte `B8JAT5TSA7` (Ablauf 18.01.2027) wurde widerrufen und durch das neue Apple-Distribution-Zertifikat `AR6372J824` ersetzt, gültig bis 26.10.2027. Die beiden studypilot-Zertifikate blieben unberührt.
+- **Profile:** „Pondus AppStore“ (`app.pondus.ios`, App Group und Push `production`) und „Pondus Widget AppStore“ (`app.pondus.ios.ExpoWidgetsTarget`, App Group), beide gültig bis 26.10.2027.
+- **GitHub:** Environment `testflight`, nur für Branch `main` und Tags `ios-v*`, mit den Secrets aus 3.1. Dazu die Repo-Variablen `APPLE_TEAM_ID` und `EXPO_PUBLIC_API_URL`.
+- **Backup:** `.p12` als `PONDUS_DIST_P12_BASE64` und Passwort als `PONDUS_DIST_P12_PASSWORD` in Infisical. Das Schlüsselmaterial auf dem Pi wurde danach mit `shred` gelöscht.
+
+**Offen:** Den Admin-Key `6V5242YH2A` in App Store Connect widerrufen, sobald der erste Lauf grün ist; die jährliche Erneuerung braucht ihn neu. Auf dem iPhone TestFlight installieren und eine interne Gruppe mit automatischer Verteilung anlegen (Schritt 7 unten).
+
+**Erneuerung im Oktober 2027:** Wie oben ohne Mac. Neuen Admin-Key anlegen, neues Zertifikat aus neuer CSR erzeugen, beide Profile neu erzeugen, Secrets und Backup tauschen.
+
+Die folgenden Schritte beschreiben den ursprünglichen Weg über den Mac. Sie bleiben als Alternative stehen.
 
 **1. App-Eintrag in App Store Connect** (appstoreconnect.apple.com → Apps → „+“ → Neue App)
 - Plattform iOS, Name z. B. „Pondus“ (falls vergeben: „Pondus – Krafttraining“; der Name auf dem Home-Bildschirm bleibt „Pondus“), Sprache Deutsch, Bundle-ID `app.pondus.ios`, SKU `pondus-ios`.
@@ -214,7 +226,7 @@ Danach `.p12`, `.p8` und Profile in einen Passwortmanager oder Infisical legen u
 **7. iPhone:** TestFlight aus dem App Store installieren, mit derselben Apple-ID wie das Developer-Konto anmelden. In App Store Connect → TestFlight → Interne Tests eine Gruppe „Team“ mit Julian anlegen und „Automatische Verteilung“ einschalten.
 
 ### Phase 2 – Workflow aktivieren und erster Lauf ⬜ (0,5–1 Tag inkl. Iterationen)
-- `git mv .github/workflows/ios-testflight.yml.disabled .github/workflows/ios-testflight.yml`, PR, Merge.
+- Workflow aktiviert (26.10.2026, mit dem PR dieses Plans). Nach dem Merge auf `main`:
 - Actions → „iOS TestFlight“ → Run workflow mit `upload = false`: prüft Prebuild, Signing und Export ohne Upload.
 - Typische Nacharbeiten beim ersten Lauf: Profilnamen, Entitlements (Push), Pfad der Extension-Info.plist, Speicherplatz.
 - Danach mit `upload = true`. Ab dann: Version in `app.json` erhöhen, mergen, `git tag ios-v0.1.0 && git push origin ios-v0.1.0`, oder jederzeit manuell starten.
@@ -253,7 +265,8 @@ UDID registrieren, Ad-hoc-Profile für beide Targets, zweite Export-Variante (`m
 | Runner-Image wechselt Xcode oder entfernt 26.6 | Build bricht | Xcode per `DEVELOPER_DIR` gepinnt, Prüfschritt meldet fehlende Version; Wechsel auf Xcode 27 bewusst vor April 2027 |
 | Expo-SDK-Update bricht Prebuild/Pods | Build bricht | SDK-Updates erst lokal bauen, dann CI mit `upload = false` |
 | 14 GB SSD auf dem Runner knapp | Archive bricht mit „No space left“ | kein DerivedData-Cache; bei Bedarf vorab große Simulator-Runtimes löschen (`xcrun simctl runtime delete`) |
-| Zertifikat oder Profile laufen ab (1 Jahr) | Signing schlägt fehl | Ablaufdatum steht im Log; Kalendererinnerung |
+| Zertifikat oder Profile laufen ab (26.10.2027) | Signing schlägt fehl | Ablaufdatum steht im Log; Kalendererinnerung, Erneuerung siehe Phase 1 |
+| Team hat höchstens 3 Distribution-Zertifikate, geteilt mit studypilot | neues Zertifikat lässt sich nicht anlegen | Vor dem Widerrufen prüfen, welche Profile ein Zertifikat nutzen; studypilot-Zertifikate nicht anfassen |
 | TestFlight-Build läuft nach 90 Tagen ab | App startet nicht mehr | Workflow manuell neu starten |
 | App-Name im Store vergeben | App-Eintrag lässt sich nicht anlegen | anderen Store-Namen wählen, Anzeigename bleibt „Pondus“ |
 | `altool --upload-app` wird abgekündigt | Upload bricht | Ersatz: `fastlane pilot upload --api_key_path` oder Transporter |
@@ -278,9 +291,9 @@ UDID registrieren, Ad-hoc-Profile für beide Targets, zweite Export-Variante (`m
 
 ## 9. Offene Fragen
 
-1. **Apple-Konto: Individual oder Organisation?** Für TestFlight intern und Ad-hoc egal. Unterschiede: Im Store erscheint als Anbieter der Personenname statt einer Firma. Für den API-Team-Key musste ein Individual-Konto laut älteren Forenberichten früher Zugriff beantragen, laut neueren Berichten wird er sofort gewährt.
-2. **Rolle des API Keys:** App Manager reicht für den Upload. Admin wäre nur für Cloud Signing nötig, das wir nicht nutzen.
-3. **Push Notifications im App-ID:** Enthält der lokale Release-Build `aps-environment`? Davon hängt ab, ob das App-Store-Profil Push enthalten muss (Phase 1, Schritt 2).
+1. ~~Apple-Konto: Individual oder Organisation?~~ Organisation (studypilot UG), geklärt am 26.10.2026.
+2. ~~Rolle des API Keys~~: App Manager für die CI, Admin nur für die Einrichtung.
+3. ~~Push Notifications in der App-ID~~: Push ist aktiv. `expo-notifications` setzt standardmäßig `aps-environment`, das App-Store-Profil enthält `production`.
 4. **Tester außer Julian?** Falls ja: interne Tester brauchen einen App-Store-Connect-Zugang, externe eine Beta-Review. Alle brauchen Tailscale.
 5. **Trigger:** nur manuell und per Tag (Entwurf) oder zusätzlich bei jedem Merge auf `main`, wenn sich `apps/mobile/**` oder `packages/shared/**` ändert? Kostet nichts, erzeugt aber viele TestFlight-Builds.
 6. **Phase 4 umsetzen?** Hängt davon ab, wie oft kleine JS-Korrekturen schnell aufs iPhone sollen.

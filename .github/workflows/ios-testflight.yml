@@ -1,6 +1,4 @@
-# ENTWURF – ist deaktiviert, weil GitHub nur *.yml/*.yaml ausführt.
-# Aktivieren: `git mv .github/workflows/ios-testflight.yml.disabled .github/workflows/ios-testflight.yml`,
-# nachdem die einmalige Einrichtung aus docs/APP_DISTRIBUTION.md (Phase 1) erledigt ist.
+# Siehe docs/APP_DISTRIBUTION.md. Secrets und Variablen sind seit dem 26.10.2026 eingerichtet.
 #
 # Baut die iOS-App (Expo Prebuild + xcodebuild archive) auf einem macOS-Runner, signiert sie
 # manuell mit Apple-Distribution-Zertifikat und zwei App-Store-Profilen (App + Widget-Extension)
