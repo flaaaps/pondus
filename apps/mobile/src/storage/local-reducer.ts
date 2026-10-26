@@ -26,6 +26,7 @@ export function applyLocalMutation(workout: WorkoutDto | null, m: SyncMutation, 
         targetRir: m.body.targetRir ?? null,
         skipped: false,
         notes: null,
+        replacesWorkoutExerciseId: m.body.replacesWorkoutExerciseId ?? null,
         sets: [],
         previous: null,
       }
@@ -35,6 +36,13 @@ export function applyLocalMutation(workout: WorkoutDto | null, m: SyncMutation, 
       }
       const list = [...exercises.filter(e => e.sequence < seq), exercise, ...exercises.filter(e => e.sequence >= seq).map(e => ({ ...e, sequence: e.sequence + 1 }))]
       return touch({ ...workout, exercises: list })
+    }
+    case "remove_exercise": {
+      const gone = workout.exercises.find(e => matches(e, m.exerciseClientId))
+      if (!gone) return workout
+      const rest = workout.exercises.filter(e => e !== gone).map(e => ({ ...e, sequence: e.sequence > gone.sequence ? e.sequence - 1 : e.sequence }))
+      // A stand-in that pointed at the removed exercise loses its link, like on the server.
+      return touch({ ...workout, exercises: rest.map(e => (e.replacesWorkoutExerciseId && matches(gone, e.replacesWorkoutExerciseId) ? { ...e, replacesWorkoutExerciseId: null } : e)) })
     }
     case "update_exercise":
       return touch({

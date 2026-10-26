@@ -7,6 +7,7 @@ import { activeWorkoutStorage } from "@/storage/active-workout"
 import { applyLocalMutation, mergeLocalDrafts } from "@/storage/local-reducer"
 import { createOutbox, sqliteOutboxStorage, type Outbox } from "@/storage/outbox"
 import { uuid } from "@/lib/uuid"
+import { restorePlan, swapBackPlan } from "./replacement"
 import { keyOf, planCompletion, upcomingSet, type LibraryLookup, type SetCompletion } from "./selectors"
 
 export type SyncStatus = "idle" | "syncing" | "offline" | "error"
@@ -46,6 +47,12 @@ interface ActiveWorkoutState {
   skipExercise: (api: ApiClient, exercise: WorkoutExerciseDto, skipped: boolean) => void
   /** Note for this exercise in this workout only (`workout_exercises.notes`); null/blank clears it. */
   setWorkoutExerciseNote: (api: ApiClient, exercise: WorkoutExerciseDto, note: string | null) => void
+  /** Drops an exercise and its sets (only meant for exercises without logged sets; the caller checks). */
+  removeExercise: (api: ApiClient, exercise: WorkoutExerciseDto) => void
+  /** "Zurück zu <Original>": brings the replaced exercise back; the stand-in goes unless sets were logged on it. Returns the restored exercise's key. */
+  swapBack: (api: ApiClient, standIn: WorkoutExerciseDto) => string | null
+  /** Un-skips an exercise; an untouched stand-in that replaced it today goes, so it does not appear twice. */
+  restoreExercise: (api: ApiClient, exercise: WorkoutExerciseDto) => void
   focusExercise: (key: string | null) => void
   setRirPending: (setKey: string | null) => void
   /** Ticks a set off with its effective values, starts the rest and asks for RIR. `advanceFocus` moves on to the next exercise right away. */
@@ -405,6 +412,32 @@ export const useActiveWorkoutStore = create<ActiveWorkoutState>()((set, get) => 
 
     setWorkoutExerciseNote(api, exercise, note) {
       get().dispatch(api, { kind: "update_exercise", workoutClientId: workoutClientId(), exerciseClientId: exercise.clientId ?? exercise.id, body: { notes: normalizeExerciseNote(note) } })
+    },
+
+    removeExercise(api, exercise) {
+      const key = keyOf(exercise)
+      get().dispatch(api, { kind: "remove_exercise", workoutClientId: workoutClientId(), exerciseClientId: key })
+      if (get().focusedExerciseKey === key) persistFocus({ focusedExerciseKey: null })
+      if (get().rirPendingSetKey && exercise.sets.some(s => keyOf(s) === get().rirPendingSetKey)) persistFocus({ rirPendingSetKey: null })
+    },
+
+    swapBack(api, standIn) {
+      const w = get().workout
+      if (!w) return null
+      const plan = swapBackPlan(w, standIn)
+      if (!plan) return null
+      get().skipExercise(api, plan.restore, false)
+      if (plan.skip) get().skipExercise(api, plan.skip, true)
+      if (plan.remove) get().removeExercise(api, plan.remove)
+      return keyOf(plan.restore)
+    },
+
+    restoreExercise(api, exercise) {
+      const w = get().workout
+      if (!w) return
+      const plan = restorePlan(w, exercise)
+      get().skipExercise(api, plan.restore, false)
+      if (plan.remove) get().removeExercise(api, plan.remove)
     },
 
     focusExercise(key) {

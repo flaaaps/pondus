@@ -377,6 +377,8 @@ export const workoutExercises = pgTable(
     /** Progression targets computed at workout start (nextTargets): kind, reason, weight, reps per set … */
     nextTarget: jsonb("next_target").$type<WorkoutNextTarget>(),
     skipped: boolean("skipped").notNull().default(false),
+    /** Exercise of the same workout this one stands in for today (that one is skipped). Cleared when it is removed. */
+    replacesWorkoutExerciseId: uuid("replaces_workout_exercise_id"),
     notes: text("notes"),
     ...timestamps,
   },

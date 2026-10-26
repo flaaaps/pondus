@@ -1,0 +1,1 @@
+ALTER TABLE "workout_exercises" ADD COLUMN "replaces_workout_exercise_id" uuid;

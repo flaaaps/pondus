@@ -36,6 +36,8 @@ export const workoutExerciseDto = z.object({
   targetRir: z.number().int().nullable(),
   skipped: z.boolean(),
   notes: z.string().nullable(),
+  /** The exercise this one stands in for today ("nur heute tauschen"); that one is skipped. Id or client id. */
+  replacesWorkoutExerciseId: z.string().nullable().optional(),
   /**
    * Progression targets computed at workout start (domain `nextTargets`), null for exercises
    * without a rep range (free/added without targets) or older workouts. Per-set targets are in
@@ -109,8 +111,8 @@ export const addWorkoutExerciseBody = z.object({
   targetRir: z.number().int().min(0).max(10).nullable().optional(),
   warmupSets: z.number().int().min(0).max(5).optional(),
   sequence: z.number().int().min(1).optional(),
-  /** Replace an existing exercise in this workout only. */
-  replacesWorkoutExerciseId: z.uuid().optional(),
+  /** Replace an existing exercise in this workout only (its id or client id). The old one is marked skipped. */
+  replacesWorkoutExerciseId: z.string().min(1).optional(),
 })
 export const updateWorkoutExerciseBody = z.object({
   skipped: z.boolean().optional(),
@@ -188,6 +190,8 @@ export const syncMutation = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("start_workout"), body: startWorkoutBody }),
   z.object({ kind: z.literal("add_exercise"), workoutClientId: z.string(), body: addWorkoutExerciseBody }),
   z.object({ kind: z.literal("update_exercise"), workoutClientId: z.string(), exerciseClientId: z.string(), body: updateWorkoutExerciseBody }),
+  /** Drops an exercise (and its sets) from the workout, e.g. a stand-in that was swapped back. */
+  z.object({ kind: z.literal("remove_exercise"), workoutClientId: z.string(), exerciseClientId: z.string() }),
   z.object({ kind: z.literal("upsert_set"), workoutClientId: z.string(), exerciseClientId: z.string(), body: upsertSetBody }),
   z.object({ kind: z.literal("delete_set"), workoutClientId: z.string(), setClientId: z.string() }),
   z.object({ kind: z.literal("pause"), workoutClientId: z.string(), body: pauseResumeBody }),

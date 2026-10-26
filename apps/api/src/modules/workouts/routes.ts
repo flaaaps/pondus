@@ -28,9 +28,10 @@ export const workoutRoutes: FastifyPluginAsyncZod = async app => {
   app.get("/:id", { schema: { tags: ["workouts"], params: idParams, response: { 200: workoutDto } } }, async req => service.get(req.userId, req.params.id))
   app.patch("/:id", { schema: { tags: ["workouts"], params: idParams, body: updateWorkoutBody, response: { 200: workoutDto } } }, async req => service.update(req.userId, req.params.id, req.body))
   app.post("/:id/exercises", { schema: { tags: ["workouts"], params: idParams, body: addWorkoutExerciseBody, response: { 200: workoutDto } } }, async req => service.addExercise(req.userId, req.params.id, req.body))
-  app.patch("/:id/exercises/:exerciseId", { schema: { tags: ["workouts"], params: idParams.extend({ exerciseId: z.uuid() }), body: updateWorkoutExerciseBody, response: { 200: workoutDto } } }, async req =>
+  app.patch("/:id/exercises/:exerciseId", { schema: { tags: ["workouts"], params: idParams.extend({ exerciseId: z.string().min(1) }), body: updateWorkoutExerciseBody, response: { 200: workoutDto } } }, async req =>
     service.updateExercise(req.userId, req.params.id, req.params.exerciseId, req.body),
   )
+  app.delete("/:id/exercises/:exerciseId", { schema: { tags: ["workouts"], params: idParams.extend({ exerciseId: z.string().min(1) }), response: { 200: workoutDto } } }, async req => service.removeExercise(req.userId, req.params.id, req.params.exerciseId))
   app.put("/:id/exercises/:exerciseId/sets", { schema: { tags: ["workouts"], params: idParams.extend({ exerciseId: z.uuid() }), body: upsertSetBody, response: { 200: workoutDto } } }, async req => {
     const { workout } = await service.upsertSet(req.userId, req.params.id, req.params.exerciseId, req.body)
     return workout
