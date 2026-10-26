@@ -90,6 +90,8 @@ Eine suspendierte App führt keinen Code aus und kann die Activity nicht aktuali
 
 Ausnahme: Buttons in Stufe 2 laufen als `LiveActivityIntent` im App-Prozess. iOS weckt die App dafür kurz auf, sodass sie die Activity aktualisieren kann.
 
+Nachtrag 26.10.2026: Mit Kopfhörern und eingeschalteter Glocke (REST_BELL.md) hält eine stille Audio-Session die App während der Pause und 10 min danach wach. Dann aktualisiert der normale Store-Abo-Weg die Activity auch zum Pausenende. Der Code der Activity bleibt unverändert, das Prinzip oben gilt weiter für alle anderen Fälle.
+
 ### 3.3 Timer ohne Updates
 
 - **Pause:** `Text(timerInterval: restStartedAt...restEndsAt, countsDown: true)` plus `ProgressView(timerInterval:)`. Der Countdown bleibt bei 0:00 stehen.
@@ -358,7 +360,7 @@ Umgesetzt und im Simulator geprüft: Start beim aktiven Workout, Updates nur bei
 
 ## 9. Spätere Erweiterungen
 
-- **AlarmKit (iOS 26+):** ein echter Alarm zum Pausenende, der Stummschaltung und Fokus ignoriert. Er bringt eine eigene, zweite Live Activity mit und braucht Swift-Code. Sinnvoll, falls Nutzer die Notification überhören.
+- **AlarmKit (iOS 26+):** ein echter Alarm zum Pausenende, der Stummschaltung und Fokus ignoriert. Er bringt eine eigene, zweite Live Activity mit und braucht Swift-Code. Sinnvoll, falls Nutzer die Notification überhören. Mit Kopfhörern deckt das inzwischen die Glocke ab (REST_BELL.md).
 - **Push-Updates:** würden den Wechsel auf „Pause vorbei“ exakt zum Pausenende ermöglichen, auch bei suspendierter App. Dafür bräuchte die API einen APNs-Schlüssel und einen Job pro Pause. Der Nutzen ist gering, solange Countdown und Notification das abdecken.
 - **Home-Screen-Widget** „Nächstes Training“ mit derselben Technik.
 - **Apple Watch:** eigener Layout-Zweig für `bannerSmall` ist schon vorgesehen; Buttons gibt es dort nicht.

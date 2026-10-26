@@ -1,6 +1,6 @@
 # Pondus – Technische Entscheidungen
 
-Jede Entscheidung mit Kontext, Alternativen und Begründung. Stand: 25.10.2026.
+Jede Entscheidung mit Kontext, Alternativen und Begründung. Stand: 26.10.2026.
 
 ## Repository
 
@@ -22,7 +22,7 @@ Jede Entscheidung mit Kontext, Alternativen und Begründung. Stand: 25.10.2026.
 | Haptik | **expo-haptics** über eine `haptic()`-Hilfsfunktion | – | Zentral, fehlertolerant (Simulator). |
 | Formulare | **Kontrollierte Komponenten + zod-Schemas aus `@pondus/shared`** | react-hook-form | Wenige Formulare, meist Chips/Stepper; eine Formularbibliothek brächte mehr Gewicht als Nutzen. |
 | Tastatur | **react-native-keyboard-controller** | KeyboardAvoidingView | Zuverlässiges Scrollen der aktiven Satzzeile über die Tastatur. |
-| Pausentimer | Wall-Clock-`endsAt` + lokale Notification (`expo-notifications`) | setInterval-Countdown | Übersteht Hintergrund/App-Wechsel; UI tickt nur fürs Rendern. Audio-Background-Mode ist in `app.json` für künftige Timer-Sounds eingetragen. |
+| Pausentimer | Wall-Clock-`endsAt` + lokale Notification (`expo-notifications`); mit Kopfhörern zusätzlich eine **Glocke** über ein eigenes Expo-Modul (`modules/rest-bell`, Swift): stille, mischbare `.playback`-Session (`mixWithOthers`, Background-Mode `audio`) hält die App während der Pause wach, ein Wall-Clock-Timer spielt die Glocke bei `endsAt` | setInterval-Countdown; nur Notification mit eigenem Sound; expo-audio; `react-native-headphone-detection` (seit 2020 ohne Release) | Übersteht Hintergrund/App-Wechsel; UI tickt nur fürs Rendern. Notification-Töne unterdrücken Stummschalter und Fokus, die Glocke in der Audio-Session nicht. Die Notification bleibt Sicherheitsnetz: mit scharfer Glocke 3 s später und mit Glocken-Ton, das Modul entfernt sie erst, wenn die Glocke spielt. iOS startet Audio nicht aus dem Hintergrund, deshalb läuft die Session nach einer Pause 10 min weiter (Pausen per Live Activity). expo-audio kennt keine Ausgaberoute und würde dieselbe `AVAudioSession` mitverwalten. Details, Risiken (App Review 2.5.4, Akku) und Testplan in REST_BELL.md. |
 | Offline-Strategie | **Lokal-first mit Outbox** (siehe ARCHITECTURE.md) | Generischer Sync-Layer (Watermelon/Replicache) | Umfang der ersten Version: nur Workout-Schreibpfade müssen offline funktionieren; Lesepfade via Query-Cache. Deterministische Konfliktregeln statt „last write wins“. |
 | IDs | `expo-crypto.randomUUID()` für Client-IDs | uuid-Paket | Nativ, kein Polyfill. |
 | Live Activities | **`expo-widgets` + `@expo/ui`** (SDK 58), Layout in TypeScript mit `'widget'`-Direktive, Updates nur lokal aus der App | `@bacons/apple-targets` mit eigenem Swift, Voltra, APNs-Push | Versioniert mit dem SDK, funktioniert mit CNG. Spike vom 25.10.2026 auf iOS 26.5 und 27.2: Timer laufen ohne Updates, Button-Taps kommen bei App im Hintergrund und auf dem Sperrbildschirm in Millisekunden an. Nur der erste Tap nach dem Beenden der App geht verloren, das ist akzeptiert. Details in LIVE_ACTIVITIES.md. |

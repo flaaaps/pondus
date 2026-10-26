@@ -5,6 +5,7 @@ import { Button, Card, ErrorState, NumberField, ListRow, LoadingState, Screen, S
 import { useDeleteAccount, useExercisePreferences, useExportData, useProfile, useUpdateUser } from "@/features/profile/queries"
 import { useSessionStore, useUser } from "@/services/session-store"
 import { useSettingsStore } from "@/services/settings-store"
+import { BELL_VOLUMES } from "@/services/rest-alert"
 import { useActiveWorkoutStore } from "@/features/workout/active-workout-store"
 import { useLiveActivityStatus } from "@/features/live-activity/live-activity"
 import { ENVIRONMENT_LABELS, EXPERIENCE_LABELS, GOAL_LABELS, WEEKDAYS_SHORT } from "@/lib/format"
@@ -95,6 +96,21 @@ export default function ProfileScreen() {
           <ListRow title="Benachrichtigung bei Ablauf" trailing={<Switch accessibilityLabel="Benachrichtigung bei Ablauf" value={settings.restTimerNotifications} onValueChange={settings.setRestTimerNotifications} trackColor={{ true: colors.accent }} />} />
           <ListRow title="Haptisches Feedback" trailing={<Switch accessibilityLabel="Haptisches Feedback" value={settings.restTimerHaptics} onValueChange={settings.setRestTimerHaptics} trackColor={{ true: colors.accent }} />} />
           <ListRow
+            title="Glocke am Pausenende"
+            subtitle="Mit Kopfhörern statt der Benachrichtigung, auch bei gesperrtem iPhone"
+            trailing={<Switch accessibilityLabel="Glocke am Pausenende, bei Kopfhörern" value={settings.restBell} onValueChange={settings.setRestBell} trackColor={{ true: colors.accent }} />}
+          />
+          {settings.restBell ? (
+            <ListRow
+              title="Lautstärke"
+              trailing={
+                <View style={{ width: 210 }}>
+                  <SegmentedControl options={[...BELL_VOLUMES]} value={nearestBellVolume(settings.restBellVolume)} onChange={v => settings.setRestBellVolume(Number(v))} />
+                </View>
+              }
+            />
+          ) : null}
+          <ListRow
             title="Standardpause"
             subtitle="Für freies Training und neue Übungen"
             trailing={
@@ -132,4 +148,9 @@ export default function ProfileScreen() {
       </Text>
     </Screen>
   )
+}
+
+/** The stored volume as one of the offered steps. */
+function nearestBellVolume(v: number): (typeof BELL_VOLUMES)[number]["value"] {
+  return BELL_VOLUMES.reduce((best, o) => (Math.abs(Number(o.value) - v) < Math.abs(Number(best.value) - v) ? o : best)).value
 }

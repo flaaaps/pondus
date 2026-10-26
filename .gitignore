@@ -6,6 +6,8 @@ coverage/
 .expo-shared/
 ios/
 android/
+# Native code of local Expo modules is source, not generated (CNG only regenerates apps/mobile/ios).
+!apps/mobile/modules/*/ios/
 *.log
 .DS_Store
 .env

@@ -10,6 +10,10 @@ interface SettingsState {
   weightUnit: WeightUnit
   restTimerNotifications: boolean
   restTimerHaptics: boolean
+  /** Ring a bell at the end of a rest when headphones are connected, instead of the notification. */
+  restBell: boolean
+  /** Bell volume relative to the system volume (0…1). */
+  restBellVolume: number
   defaultRestSeconds: number
   /** The short "how to log" intro in the active workout was dismissed. */
   workoutIntroSeen: boolean
@@ -19,6 +23,8 @@ interface SettingsState {
   setWeightUnit: (u: WeightUnit) => void
   setRestTimerNotifications: (v: boolean) => void
   setRestTimerHaptics: (v: boolean) => void
+  setRestBell: (v: boolean) => void
+  setRestBellVolume: (v: number) => void
   setDefaultRestSeconds: (v: number) => void
   setWorkoutIntroSeen: (v: boolean) => void
   setLiveActivityEnabled: (v: boolean) => void
@@ -31,6 +37,8 @@ export const useSettingsStore = create<SettingsState>()(
       weightUnit: "kg",
       restTimerNotifications: true,
       restTimerHaptics: true,
+      restBell: true,
+      restBellVolume: 0.7,
       defaultRestSeconds: 120,
       workoutIntroSeen: false,
       liveActivityEnabled: true,
@@ -38,6 +46,8 @@ export const useSettingsStore = create<SettingsState>()(
       setWeightUnit: weightUnit => set({ weightUnit }),
       setRestTimerNotifications: restTimerNotifications => set({ restTimerNotifications }),
       setRestTimerHaptics: restTimerHaptics => set({ restTimerHaptics }),
+      setRestBell: restBell => set({ restBell }),
+      setRestBellVolume: restBellVolume => set({ restBellVolume }),
       setDefaultRestSeconds: defaultRestSeconds => set({ defaultRestSeconds }),
       setWorkoutIntroSeen: workoutIntroSeen => set({ workoutIntroSeen }),
       setLiveActivityEnabled: liveActivityEnabled => set({ liveActivityEnabled }),
