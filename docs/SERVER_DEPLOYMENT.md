@@ -11,7 +11,7 @@ Ziel: Nach einem Merge auf `main` landet die API ohne Handarbeit auf dem Raspber
 | Punkt | Stand |
 | --- | --- |
 | Server | Raspberry Pi 5 (aarch64, 8 GB, SD-Karte), Debian 13, nur Nutzer `pi` ohne sudo. Rootless Podman 5.4.2 mit netavark, cgroups v2, Linger aktiv, Quadlet vorhanden (`/usr/libexec/podman/quadlet`) |
-| Stack heute | `docker-compose.yml` mit podman-compose 1.6: `pondus_db_1` (postgres:17-alpine, Volume `pondus_pgdata`) und `pondus_api_1` (lokal gebautes `localhost/pondus-api:latest`), Port nur auf `127.0.0.1:4010` |
+| Stack heute | `docker-compose.yml` mit podman-compose 1.6: `pondus_db_1` (postgres:17-alpine, Volume `pondus_pondus_pgdata`) und `pondus_api_1` (lokal gebautes `localhost/pondus-api:latest`), Port nur auf `127.0.0.1:4010` |
 | Erreichbarkeit | nur im Tailnet über `tailscale serve` (`https://jupi.tail0ee0a3.ts.net:4010` → `127.0.0.1:4010`). Keine öffentliche Adresse, kein Weg von außen auf den Pi |
 | Secrets | `~/projects/pondus/.env` auf dem Pi (`POSTGRES_PASSWORD`, `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`), nicht im Repo. Die App-Secrets der iOS-Pipeline liegen in Infisical (Projekt „studypilot“) und GitHub-Environment `testflight` |
 | Image | `apps/api/Dockerfile`: Multi-Stage auf `node:24-alpine`, esbuild-Bundle, nur Prod-Dependencies, `USER node`. Migrationen und Seed laufen beim Containerstart (`node dist/db/migrate.js && node dist/db/seed.js && node dist/server.js`), beide idempotent |
@@ -95,7 +95,7 @@ Dateien in `deploy/pi/`:
 | Datei | Zweck |
 | --- | --- |
 | `pondus.network` | eigenes Podman-Netz `pondus`; Container finden sich per Name (`pondus-db`) |
-| `pondus-db.container` | PostgreSQL 17, bestehendes Volume `pondus_pgdata`, Health-Check `pg_isready`, **kein** AutoUpdate |
+| `pondus-db.container` | PostgreSQL 17, bestehendes Volume `pondus_pondus_pgdata`, Health-Check `pg_isready`, **kein** AutoUpdate |
 | `pondus-api.container` | `ghcr.io/flaaaps/pondus-api:prod`, `AutoUpdate=registry`, Port `127.0.0.1:4010`, Health-Check `/health`, `Notify=healthy`, startet nach der DB |
 | `install.sh` | kopiert die Units nach `~/.config/containers/systemd/`, ergänzt `DATABASE_URL` in `.env` (aus `POSTGRES_PASSWORD`, ohne es auszugeben), stellt den Auto-Update-Timer auf 5 Minuten, legt ein wöchentliches `podman image prune` an, stoppt den compose-Stack und startet die Units |
 
@@ -158,7 +158,7 @@ Platz auf der SD-Karte: ein Image rund 250 MB. `podman auto-update` behält das 
 
 - **CI:** PR mit absichtlichem Dockerfile-Fehler → Build-Job rot, kein Push. PR ohne API-Änderung → Workflow startet nicht.
 - **Registry:** nach einem Merge existieren `sha-…`, `main` und `prod`; `prod` hat denselben Digest wie `sha-…` des Merges.
-- **Pi:** `/health` zeigt den Commit; `journalctl --user -u podman-auto-update` protokolliert „Updated“; `podman ps` zeigt das neue Image; Volume `pondus_pgdata` unverändert (Nutzer, Workouts vorhanden).
+- **Pi:** `/health` zeigt den Commit; `journalctl --user -u podman-auto-update` protokolliert „Updated“; `podman ps` zeigt das neue Image; Volume `pondus_pondus_pgdata` unverändert (Nutzer, Workouts vorhanden).
 - **Rollback:** Image mit fehlschlagendem Start als `:prod` → nach dem Timer-Lauf läuft weiter das alte Image, Journal zeigt „rolled back“.
 - **Boot:** Pi neu starten → beide Units laufen, Tailscale-URL antwortet.
 - **App:** Workout starten, Satz abhaken, Sync läuft; Live Activity und Notifications unverändert.
