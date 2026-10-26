@@ -99,6 +99,13 @@ export default function ActiveWorkoutScreen() {
   const [dockHeight, setDockHeight] = useState(140)
   const [keyboardOpen, setKeyboardOpen] = useState(false)
   const [upNextKey, setUpNextKey] = useState<string | null>(null)
+  /** Finishing or discarding clears the workout before the screen is gone; show nothing instead of "Kein aktives Workout". */
+  const [leaving, setLeaving] = useState(false)
+  /** Closes the screen. After a cold start from the Live Activity it is the only screen, so `back()` would do nothing. */
+  const leave = useCallback(() => {
+    if (router.canGoBack()) router.back()
+    else router.replace("/(tabs)")
+  }, [router])
   const advance = useRef<ReturnType<typeof setTimeout> | null>(null)
   const scrollRef = useRef<KeyboardAwareScrollViewRef>(null)
   const editorY = useRef(0)
@@ -151,13 +158,14 @@ export default function ActiveWorkoutScreen() {
   }, [ui.toast])
 
   if (!workout) {
+    if (leaving) return <View style={{ flex: 1, backgroundColor: colors.background }} />
     return (
       <View style={{ flex: 1, backgroundColor: colors.background, paddingTop: insets.top }}>
         <EmptyState
           icon="figure.strengthtraining.traditional"
           title="Kein aktives Workout"
           actionTitle="Zurück"
-          onAction={() => router.back()}
+          onAction={leave}
         />
       </View>
     )
@@ -501,21 +509,27 @@ export default function ActiveWorkoutScreen() {
         {
           text: "Verwerfen",
           style: "destructive",
-          onPress: async () => {
+          onPress: () => {
+            setLeaving(true)
             timer.stop()
-            await store.cancel(api)
-            router.back()
+            // Leave right away: with bad reception in the gym the server call can take long, and the
+            // cancel is already queued in the outbox, which retries it on its own.
+            void store.cancel(api)
+            leave()
           },
         },
       ],
     )
-  const complete = async () => {
+  const complete = () => {
+    setLeaving(true)
     timer.stop()
-    const { workout: done, serverId } = await store.complete(api)
+    // The completion is saved locally and queued before the first await; the summary shows the local
+    // numbers and switches to the server's (records, comparison) as soon as the outbox has drained.
+    void store.complete(api)
     haptic("success")
     router.replace({
       pathname: "/workout/summary",
-      params: { id: serverId ?? "", local: serverId ? "" : "1", clientId: done.clientId ?? "" },
+      params: { id: "", local: "1", clientId: workout.clientId ?? "" },
     })
   }
   const finish = () => {
@@ -523,14 +537,14 @@ export default function ActiveWorkoutScreen() {
       (n, e) => n + e.sets.filter(s => !s.completed && !isWarmup(s)).length,
       0,
     )
-    if (!openSets) return void complete()
+    if (!openSets) return complete()
     Alert.alert(
       "Workout beenden?",
       `${doneSets} Arbeitssätze protokolliert, ${openSets} offen. Offene Sätze werden nicht gespeichert.`,
       [
         { text: "Weiter trainieren", style: "cancel" },
         { text: "Verwerfen (nicht speichern)", style: "destructive", onPress: discard },
-        { text: "Beenden", onPress: () => void complete() },
+        { text: "Beenden", onPress: complete },
       ],
     )
   }
@@ -625,7 +639,7 @@ export default function ActiveWorkoutScreen() {
       subtitle: `${doneSets} Arbeitssätze`,
       a11y: "Workout beenden",
       icon: "flag.checkered",
-      onPress: () => void complete(),
+      onPress: complete,
     }
 
   const toast = ui.toast

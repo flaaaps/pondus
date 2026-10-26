@@ -103,7 +103,7 @@ export default function SummaryScreen() {
             ))}
         </Card>
       </Section>
-      <Button title="Fertig" fullWidth onPress={() => router.replace("/(tabs)")} hapticStyle="medium" />
+      <Button title="Fertig" fullWidth onPress={() => router.dismissTo("/(tabs)")} hapticStyle="medium" />
     </Screen>
   )
 }
