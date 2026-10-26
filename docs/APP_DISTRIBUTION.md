@@ -1,6 +1,6 @@
 # Pondus – App-Verteilung ohne MacBook
 
-Stand: 26.10.2026. Status: 🟡 Einrichtung erledigt (Phase 1, ohne MacBook), erster CI-Lauf offen. Workflow: `.github/workflows/ios-testflight.yml`.
+Stand: 26.10.2026. Status: 🟡 Einrichtung erledigt (Phase 1, ohne MacBook), erster CI-Lauf ohne Upload grün, Upload zu TestFlight offen. Workflow: `.github/workflows/ios-testflight.yml`.
 
 Ziel: Neue App-Versionen kommen auf Julians iPhone, ohne dass das MacBook laufen muss. Ein Build startet automatisch (Tag oder Knopf in GitHub), installiert wird über einen Link bzw. die TestFlight-App. Reine JS-Änderungen sollen später auch ohne neuen nativen Build ankommen.
 
@@ -107,7 +107,7 @@ Nicht möglich und nicht nötig. Das Enterprise-Programm (299 USD/Jahr) verlangt
 | Runner | `macos-26` (= `macos-latest`): arm64 M1, 3 Kerne, 7 GB RAM, 14 GB SSD |
 | Xcode | Standard 26.6, außerdem 26.0.1 bis 26.5. Xcode 27 nur als Public Preview. Wir pinnen 26.6 über `DEVELOPER_DIR`, wie auf dem MacBook |
 | Vorinstalliert | Node 24, CocoaPods 1.17, fastlane 2.241, xcbeautify 3.2, jq |
-| Laufzeit (Schätzung) | Install 2 min, Checks 2 min, Prebuild 1 min, Pod install 3–6 min (mit Cache 1–2), Archive 12–25 min, Export und Upload 2–4 min: **etwa 20–35 min**, erster Lauf eher 40. Timeout 75 min |
+| Laufzeit (Schätzung) | Install 2 min, Checks 2 min, Prebuild 1 min, Pod install 3–6 min (mit Cache 1–2), Archive 12–25 min, Export und Upload 2–4 min: **etwa 20–35 min**. Timeout 75 min. Erster Lauf (26.10.2026, ohne Upload): **17,5 min**, davon Pod install 2 min (ohne Cache), Archive 13,7 min, Export 8 s |
 | Caching | pnpm-Store über `setup-node`, `ios/Pods` über `actions/cache` (Schlüssel: Lockfile + `package.json`). DerivedData bewusst nicht, weil es den knappen Speicher füllt und bei Archiven wenig bringt |
 | Sicherheit | Läuft nur bei `workflow_dispatch` und Tag `ios-v*`, nie bei Pull Requests. Secrets liegen im Environment `testflight`, das nur `main` und `ios-v*`-Tags darf. Keine `.ipa` als Artefakt, weil Artefakte öffentlicher Repos für jeden angemeldeten GitHub-Nutzer ladbar sind |
 
@@ -164,12 +164,12 @@ Offene Fragen 1–3 aus Abschnitt 9 beantworten. Keine davon blockiert den Plan,
 
 ### Phase 1 – Einmalige Einrichtung bei Apple ✅ (26.10.2026, ohne MacBook)
 
-**So wurde es gemacht:** Julian hat vom iPhone aus den App-Eintrag angelegt und zwei Team-API-Keys erzeugt: Admin `6V5242YH2A` nur für die Einrichtung, App Manager `HT4G76T9HV` für die CI. Die `.p8` liegen in Infisical (Projekt „studypilot“, `prod`) als `PONDUS_ADMIN` und `PONDUS_MANAGER`, die IDs als `PONDUS_ADMIN_KEY_ID`, `PONDUS_MANAGER_KEY_ID` und `PONDUS_ASC_ISSUER_ID`. Den Rest hat Claude vom Pi aus über die App Store Connect API erledigt:
+**So wurde es gemacht:** Julian hat vom iPhone aus den App-Eintrag angelegt und zwei Team-API-Keys erzeugt: Admin `6V5242YH2A` nur für die Einrichtung, App Manager `HT4G76T9HV` für die CI. Die `.p8` liegen in Infisical (Projekt „studypilot“, nur `prod`) als `ASC_ADMIN_KEY_P8` und `ASC_MANAGER_KEY_P8`, die IDs als `ASC_ADMIN_KEY_ID`, `ASC_MANAGER_KEY_ID` und `ASC_ISSUER_ID`. Die Namen sind bewusst nicht Pondus-spezifisch: API Keys und Distribution-Zertifikat gelten für das ganze Team und damit für alle Apps darin. Pondus-spezifisch sind nur die Profile. Den Rest hat Claude vom Pi aus über die App Store Connect API erledigt:
 
 - **Zertifikat:** Privater Schlüssel und CSR wurden mit `openssl` erzeugt. Das Team hatte schon die maximal 3 Distribution-Zertifikate. Das von keinem Profil genutzte `B8JAT5TSA7` (Ablauf 18.01.2027) wurde widerrufen und durch das neue Apple-Distribution-Zertifikat `AR6372J824` ersetzt, gültig bis 26.10.2027. Die beiden studypilot-Zertifikate blieben unberührt.
 - **Profile:** „Pondus AppStore“ (`app.pondus.ios`, App Group und Push `production`) und „Pondus Widget AppStore“ (`app.pondus.ios.ExpoWidgetsTarget`, App Group), beide gültig bis 26.10.2027.
 - **GitHub:** Environment `testflight`, nur für Branch `main` und Tags `ios-v*`, mit den Secrets aus 3.1. Dazu die Repo-Variablen `APPLE_TEAM_ID` und `EXPO_PUBLIC_API_URL`.
-- **Backup:** `.p12` als `PONDUS_DIST_P12_BASE64` und Passwort als `PONDUS_DIST_P12_PASSWORD` in Infisical. Das Schlüsselmaterial auf dem Pi wurde danach mit `shred` gelöscht.
+- **Backup:** `.p12` als `APPLE_DIST_CERT_P12_BASE64` und Passwort als `APPLE_DIST_CERT_PASSWORD` in Infisical. Nutzt später auch studypilot dieses Zertifikat, müssen bei der Erneuerung beide CIs gleichzeitig umgestellt werden. Das Schlüsselmaterial auf dem Pi wurde danach mit `shred` gelöscht.
 
 **Offen:** Den Admin-Key `6V5242YH2A` in App Store Connect widerrufen, sobald der erste Lauf grün ist; die jährliche Erneuerung braucht ihn neu. Auf dem iPhone TestFlight installieren und eine interne Gruppe mit automatischer Verteilung anlegen (Schritt 7 unten).
 
@@ -225,7 +225,9 @@ Danach `.p12`, `.p8` und Profile in einen Passwortmanager oder Infisical legen u
 
 **7. iPhone:** TestFlight aus dem App Store installieren, mit derselben Apple-ID wie das Developer-Konto anmelden. In App Store Connect → TestFlight → Interne Tests eine Gruppe „Team“ mit Julian anlegen und „Automatische Verteilung“ einschalten.
 
-### Phase 2 – Workflow aktivieren und erster Lauf ⬜ (0,5–1 Tag inkl. Iterationen)
+### Phase 2 – Workflow aktivieren und erster Lauf 🟡 (26.10.2026)
+Lauf `40299883599` mit `upload = false` war im ersten Versuch grün, ohne Nacharbeiten. Die `.ipa` enthält `ExpoWidgetsTarget.appex`. App und Extension sind mit App Group signiert, die App zusätzlich mit `aps-environment = production`, beide mit `get-task-allow = false` und Version 0.1.0 (1). Offen ist der erste Lauf mit Upload.
+
 - Workflow aktiviert (26.10.2026, mit dem PR dieses Plans). Nach dem Merge auf `main`:
 - Actions → „iOS TestFlight“ → Run workflow mit `upload = false`: prüft Prebuild, Signing und Export ohne Upload.
 - Typische Nacharbeiten beim ersten Lauf: Profilnamen, Entitlements (Push), Pfad der Extension-Info.plist, Speicherplatz.
