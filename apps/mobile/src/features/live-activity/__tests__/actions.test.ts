@@ -1,11 +1,12 @@
 import { createActivityActionHandler, type ActivityActionDeps } from "../actions"
 
-function setup(p: Partial<{ activityId: string | null; shownRir: string | null; pendingRir: string | null; restSet: boolean }> = {}) {
+function setup(p: Partial<{ activityId: string | null; shownRir: string | null; pendingRir: string | null; restRunning: boolean; restSet: boolean }> = {}) {
   const deps = {
     currentActivityId: () => (p.activityId === undefined ? "a1" : p.activityId),
     shownRirSetKey: () => p.shownRir ?? null,
     pendingRirSetKey: () => p.pendingRir ?? null,
-    restSet: () => p.restSet ?? false,
+    restRunning: () => p.restRunning ?? false,
+    restSet: () => p.restSet ?? p.restRunning ?? false,
     completeNextSet: jest.fn(),
     stopRest: jest.fn(),
     setRir: jest.fn(),
@@ -33,18 +34,18 @@ describe("activity actions", () => {
     expect(setup({ activityId: null }).handle(tap("complete-set"))).toBe("stale")
     expect(deps.completeNextSet).not.toHaveBeenCalled()
   })
-  it("ticks off the next set during a rest too (iOS may show the rest look past its end)", () => {
-    const { deps, handle } = setup({ restSet: true })
-    expect(handle(tap("complete-set"))).toBe("done")
-    expect(deps.completeNextSet).toHaveBeenCalledTimes(1)
+  it("does not tick off a set while a rest is running", () => {
+    const { deps, handle } = setup({ restRunning: true })
+    expect(handle(tap("complete-set"))).toBe("ignored")
+    expect(deps.completeNextSet).not.toHaveBeenCalled()
   })
   it("skips a running rest", () => {
-    const { deps, handle } = setup({ restSet: true })
+    const { deps, handle } = setup({ restRunning: true })
     expect(handle(tap("rest-done"))).toBe("done")
     expect(deps.stopRest).toHaveBeenCalledTimes(1)
   })
   it("also clears a rest that ran out before iOS marked the activity stale", () => {
-    const { deps, handle } = setup({ restSet: true })
+    const { deps, handle } = setup({ restRunning: false, restSet: true })
     expect(handle(tap("rest-done"))).toBe("done")
     expect(deps.stopRest).toHaveBeenCalledTimes(1)
   })
