@@ -10,8 +10,8 @@ Network=pondus.network
 EnvironmentFile=%h/projects/pondus/.env
 Environment=POSTGRES_USER=pondus
 Environment=POSTGRES_DB=pondus
-# Bestehendes Volume aus dem compose-Stack weiterverwenden (keine Datenmigration nötig).
-Volume=pondus_pgdata:/var/lib/postgresql/data
+# Bestehendes Volume aus dem compose-Stack weiterverwenden (podman-compose prefixt mit dem Projektnamen).
+Volume=pondus_pondus_pgdata:/var/lib/postgresql/data
 HealthCmd=pg_isready -U pondus -d pondus
 HealthInterval=10s
 HealthTimeout=5s

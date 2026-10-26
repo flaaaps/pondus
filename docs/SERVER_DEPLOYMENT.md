@@ -1,6 +1,6 @@
 # Pondus – Server-Deployment über GitHub Actions und GitHub Packages
 
-Stand: 26.10.2026. Status: 🟡 Workflow und Unit-Dateien im Repo, Umstellung des Pi offen (Phase 2). Workflow: `.github/workflows/api-image.yml`, Pi-Seite: `deploy/pi/`.
+Stand: 26.10.2026. Status: ✅ in Betrieb seit 26.10.2026 (Phasen 1–3), Freigabe-Reviewer am Environment optional. Workflow: `.github/workflows/api-image.yml`, Pi-Seite: `deploy/pi/`.
 
 Ziel: Nach einem Merge auf `main` landet die API ohne Handarbeit auf dem Raspberry Pi. Heute baut Claude oder Julian das Image auf dem Pi selbst (`podman compose build`), und jeder vergessene Schritt fällt erst auf, wenn die App nicht mehr synchronisiert. Genau das ist am 26.10. passiert: PR 2 war gemerged, die App schon damit gebaut, die API auf dem Pi noch auf dem Stand vom Vortag.
 
@@ -99,7 +99,7 @@ Dateien in `deploy/pi/`:
 | `pondus-api.container` | `ghcr.io/flaaaps/pondus-api:prod`, `AutoUpdate=registry`, Port `127.0.0.1:4010`, Health-Check `/health`, `Notify=healthy`, startet nach der DB |
 | `install.sh` | kopiert die Units nach `~/.config/containers/systemd/`, ergänzt `DATABASE_URL` in `.env` (aus `POSTGRES_PASSWORD`, ohne es auszugeben), stellt den Auto-Update-Timer auf 5 Minuten, legt ein wöchentliches `podman image prune` an, stoppt den compose-Stack und startet die Units |
 
-Was sich für die Daten ändert: nichts. Das Volume `pondus_pgdata` wird weiterverwendet, die Datenbank läuft im selben Image weiter. `docker-compose.yml` bleibt für lokale Tests und als Fallback erhalten; `tailscale serve` zeigt weiter auf `127.0.0.1:4010`.
+Was sich für die Daten ändert: nichts. Das Volume `pondus_pondus_pgdata` wird weiterverwendet, die Datenbank läuft im selben Image weiter. `docker-compose.yml` bleibt für lokale Tests und als Fallback erhalten; `tailscale serve` zeigt weiter auf `127.0.0.1:4010`.
 
 Migrationen laufen wie bisher beim Containerstart. Beim Rollback auf ein älteres Image bleiben neuere, additive Migrationen in der Datenbank stehen; das ist unkritisch, solange Migrationen nur hinzufügen (bisher alle). Eine Migration, die Spalten entfernt oder umbenennt, braucht ab jetzt die Regel „erst Code ausrollen, der ohne die Spalte auskommt, dann die Migration“.
 
@@ -115,7 +115,7 @@ Migrationen laufen wie bisher beim Containerstart. Beim Rollback auf ein ältere
 3. Vom Pi aus testen, ohne etwas zu ändern: `podman pull ghcr.io/flaaaps/pondus-api:prod` und `podman run --rm ghcr.io/flaaaps/pondus-api:prod node -e "console.log(process.env.APP_VERSION)"`.
 4. Optional: Environment `production` → „Required reviewers: flaaaps“ setzen, wenn Freigaben gewünscht sind.
 
-### Phase 3 – Pi umstellen ⬜ (20 min, kurze Unterbrechung)
+### Phase 3 – Pi umstellen ✅ (26.10.2026)
 1. Backup: `podman exec pondus_db_1 pg_dump -U pondus -d pondus | gzip > ~/backups/pondus/pondus-$(date +%Y%m%d-%H%M%S)-pre-quadlet.sql.gz`.
 2. `bash deploy/pi/install.sh` im Repo-Ordner. Das Script stoppt den compose-Stack und startet die Units; die API ist etwa 30 bis 60 Sekunden nicht erreichbar.
 3. Prüfen: `systemctl --user status pondus-api`, `curl http://127.0.0.1:4010/health` zeigt die `version` des Commits, App am iPhone synchronisiert.
