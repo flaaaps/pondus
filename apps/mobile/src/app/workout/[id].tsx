@@ -28,6 +28,7 @@ import { SetList } from "@/components/workout/SetList"
 import { WorkoutDock, type DockAction } from "@/components/workout/WorkoutDock"
 import { WorkoutTopBar } from "@/components/workout/WorkoutTopBar"
 import { ExerciseHeader } from "@/components/workout/ExerciseHeader"
+import { ExerciseNoteLine } from "@/components/ExerciseNoteLine"
 import { FirstTimeCard, IntroCard, RirCard } from "@/components/workout/ContextCards"
 import { useActiveWorkoutStore } from "@/features/workout/active-workout-store"
 import { useWorkoutUiStore } from "@/features/workout/workout-ui-store"
@@ -53,6 +54,7 @@ import { useElapsed } from "@/features/workout/use-elapsed"
 import { canRemove, focusAfterRemoval, originalOf } from "@/features/workout/replacement"
 import { useExercisePicker } from "@/features/exercises/picker-store"
 import { useAllExercises } from "@/features/exercises/queries"
+import { useEffectiveNote } from "@/features/exercises/note-store"
 import { useApi } from "@/services/session-store"
 import { useRestTimerStore } from "@/services/rest-timer-store"
 import { useSettingsStore } from "@/services/settings-store"
@@ -107,6 +109,12 @@ export default function ActiveWorkoutScreen() {
   const lookup: LibraryLookup = useCallback(
     id => (id ? libraryById.get(id) : undefined),
     [libraryById],
+  )
+
+  const focusedForNote = workout ? focusedExercise(workout, store.focusedExerciseKey) : null
+  const exerciseNote = useEffectiveNote(
+    focusedForNote?.exerciseId,
+    focusedForNote?.exerciseId ? libraryById.get(focusedForNote.exerciseId) : undefined,
   )
 
   const workoutKey = workout ? keyOf(workout) : null
@@ -383,6 +391,17 @@ export default function ActiveWorkoutScreen() {
     })
     router.push("/workout/pick-exercise")
   }
+  /** "exercise": lasting note for every workout; "workout": note on this exercise today only. */
+  const editNote = (ex: WorkoutExerciseDto, scope: "exercise" | "workout") =>
+    router.push({
+      pathname: "/exercise-note",
+      params: {
+        scope,
+        exerciseId: ex.exerciseId ?? "",
+        name: ex.exerciseNameSnapshot,
+        workoutExerciseKey: keyOf(ex),
+      },
+    })
   /** Dropping the warm-up is a real decision (injury risk on the first heavy set), so it asks once. */
   const confirmSkipWarmups = (ex: WorkoutExerciseDto) => {
     const open = ex.sets.filter(s => isWarmup(s) && !s.completed).length
@@ -430,6 +449,10 @@ export default function ActiveWorkoutScreen() {
     const openWarmups = ex.sets.some(s => isWarmup(s) && !s.completed)
     const original = originalOf(workout, ex)
     const items: { label: string; run: () => void; destructive?: boolean }[] = [
+      ...(ex.exerciseId
+        ? [{ label: "Notiz zu dieser Übung …", run: () => editNote(ex, "exercise") }]
+        : []),
+      { label: "Notiz zu diesem Workout …", run: () => editNote(ex, "workout") },
       { label: "Übung austauschen (nur heute)", run: () => swap(ex) },
       ...(original ? [{ label: `Zurück zu „${original.exerciseNameSnapshot}“`, run: () => swapBack(ex) }] : []),
       {
@@ -729,6 +752,25 @@ export default function ActiveWorkoutScreen() {
             onOptions={() => exerciseOptions(focused)}
             onExplain={() => openGuide("progression")}
           />
+        ) : null}
+        {focused && state !== "workoutDone" ? (
+          <View key={keyOf(focused)} style={{ marginTop: -space[3] }}>
+            {focused.exerciseId ? (
+              <ExerciseNoteLine
+                prefix="Notiz"
+                a11yName="Notiz zu dieser Übung"
+                note={exerciseNote}
+                emptyLabel="Notiz zur Übung hinzufügen"
+                onEdit={() => editNote(focused, "exercise")}
+              />
+            ) : null}
+            <ExerciseNoteLine
+              prefix="Nur heute"
+              a11yName="Notiz zu diesem Workout"
+              note={focused.notes}
+              onEdit={() => editNote(focused, "workout")}
+            />
+          </View>
         ) : null}
         {focused && isFirstTime(focused) && state === "ready" ? (
           <FirstTimeCard onMore={() => openGuide("first-time")} />

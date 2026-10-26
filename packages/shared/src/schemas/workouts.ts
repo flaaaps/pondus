@@ -1,6 +1,7 @@
 import { z } from "zod"
 import { SET_TYPES } from "../domain/types"
 import { RECORD_TYPES } from "../domain/records"
+import { setExerciseNoteBody } from "./exercises"
 import { idempotencyKey, isoDateTime, paginationQuery, reps, rir, rpe, weightGrams } from "./common"
 
 export const setType = z.enum(SET_TYPES)
@@ -197,6 +198,8 @@ export const syncMutation = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("resume"), workoutClientId: z.string(), body: pauseResumeBody }),
   z.object({ kind: z.literal("complete"), workoutClientId: z.string(), body: completeWorkoutBody }),
   z.object({ kind: z.literal("cancel"), workoutClientId: z.string() }),
+  /** Not tied to a workout: the user's lasting note on an exercise, queued so it can be edited offline. */
+  z.object({ kind: z.literal("set_exercise_note"), exerciseId: z.uuid(), body: setExerciseNoteBody.required({ updatedAt: true }) }),
 ])
 export type SyncMutation = z.infer<typeof syncMutation>
 export const syncBody = z.object({ mutations: z.array(syncMutation).min(1).max(500) })

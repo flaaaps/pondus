@@ -36,6 +36,13 @@
       "when": 1792961567580,
       "tag": "0004_exercise_replacement",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793006755084,
+      "tag": "0005_user_exercise_notes",
+      "breakpoints": true
     }
   ]
 }

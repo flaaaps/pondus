@@ -106,6 +106,8 @@ export function applyLocalMutation(workout: WorkoutDto | null, m: SyncMutation, 
     }
     case "cancel":
       return touch({ ...workout, status: "cancelled" })
+    case "set_exercise_note":
+      return workout // lasting per-exercise note, not part of the workout (see note-store)
   }
 }
 

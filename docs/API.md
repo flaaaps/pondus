@@ -25,16 +25,18 @@ Basis: `/api/v1`. Auth: `Authorization: Bearer <accessToken>` (alle Endpunkte au
 | GET/PUT | `/me/profile` | Trainingsprofil inkl. `musclePriorities` (PUT ist partiell) |
 | PUT | `/me/profile/muscle-priorities` | Rangfolge ersetzen |
 | GET/PUT | `/me/exercise-preferences` | `{ preferred[], excluded[] }` (vollständiger Ersatz, keine Überschneidung) |
-| GET | `/me/export` | Alle Nutzerdaten als JSON |
+| GET | `/me/export` | Alle Nutzerdaten als JSON (inkl. `exerciseNotes`) |
 | DELETE | `/me` | Konto löschen (kaskadiert) |
 
 ### Exercises
-| GET | `/exercises` | `q`, `muscles`, `equipment`, `category`, `difficulty` (CSV), `unilateral`, `favorites`, `custom`, `recent`, `sort=name|recent`, `limit`, `cursor` → `{ items, nextCursor, total }`. `q` wird normalisiert (Groß/Klein, ä/ae/a, ö/oe/o, ü/ue/u, ß/ss, Bindestriche/Satzzeichen) und tokenweise gematcht: jedes Wort muss in Name (de/en), Slug oder Alias vorkommen („bankdrucken“, „bank drücken“ → „Bankdrücken mit Langhantel“). Treffer mit Namensanfang zuerst. CSV-Filter sind ODER-verknüpft innerhalb eines Filters, auch `equipment`: Eine Übung passt, wenn sie **irgendein** gewähltes Gerät nutzt (`equipment=barbell,dumbbell` → Langhantel- oder Kurzhantelübungen). Verschiedene Filter sind UND-verknüpft. |
+| GET | `/exercises` | Jede Übung trägt `note` (dauerhafte Nutzer-Notiz oder `null`) und `noteUpdatedAt`. `q`, `muscles`, `equipment`, `category`, `difficulty` (CSV), `unilateral`, `favorites`, `custom`, `recent`, `sort=name|recent`, `limit`, `cursor` → `{ items, nextCursor, total }`. `q` wird normalisiert (Groß/Klein, ä/ae/a, ö/oe/o, ü/ue/u, ß/ss, Bindestriche/Satzzeichen) und tokenweise gematcht: jedes Wort muss in Name (de/en), Slug oder Alias vorkommen („bankdrucken“, „bank drücken“ → „Bankdrücken mit Langhantel“). Treffer mit Namensanfang zuerst. CSV-Filter sind ODER-verknüpft innerhalb eines Filters, auch `equipment`: Eine Übung passt, wenn sie **irgendein** gewähltes Gerät nutzt (`equipment=barbell,dumbbell` → Langhantel- oder Kurzhantelübungen). Verschiedene Filter sind UND-verknüpft. |
 | GET | `/exercises/muscle-groups` | |
 | POST | `/exercises` | eigene Übung (201) |
 | GET/PATCH/DELETE | `/exercises/:id` | Detail / eigene bearbeiten / eigene soft-löschen |
 | GET | `/exercises/:id/alternatives` | kuratiert + berechnet, mit `reasons` |
 | PUT/DELETE | `/exercises/:id/favorite` | |
+| PUT | `/exercises/:id/note` | `{ note: string \| null (max. 500), updatedAt? }` → Übung. Dauerhafte Notiz des Nutzers zur Übung; getrimmt, leer/`null` = löschen. `updatedAt` (Bearbeitungszeit des Clients, Default jetzt, auf Serverzeit begrenzt): eine ältere Änderung als die gespeicherte wird ignoriert (Last Writer Wins), die Antwort zeigt dann die gespeicherte Notiz |
+| DELETE | `/exercises/:id/note` | Notiz löschen → Übung |
 | GET | `/exercises/:id/history` | Sätze je abgeschlossenem Workout, `from`/`to` |
 
 ### Plans
@@ -58,7 +60,7 @@ Basis: `/api/v1`. Auth: `Authorization: Bearer <accessToken>` (alle Endpunkte au
 | GET/PATCH | `/workouts/:id` | |
 | POST | `/workouts/:id/exercises` | hinzufügen (`replacesWorkoutExerciseId` für „nur heute tauschen“: Server-ID oder Client-ID; die ersetzte Übung wird übersprungen, die neue zeigt per `replacesWorkoutExerciseId` auf sie) |
 | DELETE | `/workouts/:id/exercises/:exerciseId` | Übung samt Sätzen entfernen (ID oder Client-ID; idempotent, Reihenfolge schließt die Lücke) |
-| PATCH | `/workouts/:id/exercises/:exerciseId` | `skipped`, `notes`, `restSeconds`, `sequence` |
+| PATCH | `/workouts/:id/exercises/:exerciseId` | `skipped`, `notes` (Notiz nur zu diesem Workout, nicht die dauerhafte Übungsnotiz), `restSeconds`, `sequence` |
 | PUT | `/workouts/:id/exercises/:exerciseId/sets` | Satz-Upsert per `clientId`, Konfliktauflösung über `updatedAt` |
 | DELETE | `/workouts/:id/sets/:setIdOrClientId` | |
 | POST | `/workouts/:id/pause` · `/resume` · `/cancel` | |
@@ -71,4 +73,4 @@ Basis: `/api/v1`. Auth: `Authorization: Bearer <accessToken>` (alle Endpunkte au
 | GET | `/progress/records?exerciseId&limit&cursor` | |
 
 ### Sync
-| POST | `/sync/workouts` | `{ mutations[] }` (max. 500; Arten: `start_workout`, `add_exercise`, `update_exercise`, `remove_exercise`, `upsert_set`, `delete_set`, `pause`, `resume`, `complete`, `cancel`) → `{ applied, results[{ index, status, message? }], workouts[] }` |
+| POST | `/sync/workouts` | `{ mutations[] }` (max. 500; Arten: `start_workout`, `add_exercise`, `update_exercise`, `remove_exercise`, `upsert_set`, `delete_set`, `pause`, `resume`, `complete`, `cancel`, `set_exercise_note`) → `{ applied, results[{ index, status, message? }], workouts[] }`. `set_exercise_note { exerciseId, body: { note, updatedAt } }` ist die dauerhafte Übungsnotiz (offline bearbeitbar, nicht an ein Workout gebunden): `applied`, `duplicate` (gespeicherte Notiz ist gleich alt oder neuer) oder `error` (Übung unbekannt/nicht sichtbar) |

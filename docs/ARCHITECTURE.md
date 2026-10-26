@@ -64,7 +64,7 @@ State-Schichten:
 
 ## Offline & Synchronisation
 
-- **Outbox** (`storage/outbox.ts`): Append-only-Queue von `SyncMutation`s (Start, Übung hinzufügen/ändern, Satz upsert/löschen, Pause/Resume, Complete, Cancel), in Reihenfolge als Batch an `POST /sync/workouts`. Jede Mutation trägt Client-IDs → serverseitig idempotent; Antwort pro Mutation `applied | duplicate | conflict | error`. Netzwerkfehler: nichts wird entfernt. Fachliche Ablehnung: Eintrag wird entfernt und dem Nutzer gemeldet.
+- **Outbox** (`storage/outbox.ts`): Append-only-Queue von `SyncMutation`s (Start, Übung hinzufügen/ändern, Satz upsert/löschen, Pause/Resume, Complete, Cancel, dauerhafte Übungsnotiz `set_exercise_note`), in Reihenfolge als Batch an `POST /sync/workouts`. Jede Mutation trägt Client-IDs → serverseitig idempotent; Antwort pro Mutation `applied | duplicate | conflict | error`. Netzwerkfehler: nichts wird entfernt. Fachliche Ablehnung: Eintrag wird entfernt und dem Nutzer gemeldet.
 - **Flush-Trigger:** nach jeder Mutation, bei App-Foreground, alle 15 s solange Einträge offen sind. Kein Background-Processing.
 - **Autorität:** Solange die Queue nicht leer ist, gilt der lokale Stand. Ist sie leer, wird die Serverkopie übernommen (IDs, „zuletzt“-Werte).
 - **Konflikte:**
@@ -72,6 +72,7 @@ State-Schichten:
   - Workout auf anderem Gerät abgeschlossen: Mutationen auf ein abgeschlossenes Workout werden mit `conflict` abgelehnt und dem Nutzer gezeigt; Replays bereits angewandter Sätze bleiben `duplicate`.
   - Plan auf dem Server geändert: Workouts referenzieren die Planversion; der Client lädt die aktuelle Version bei Sichtbarkeit nach. Vorschau-Anwendung prüft `baseVersionNumber` → `plan_changed`.
   - Request mehrfach gesendet: Client-IDs (Workout/Übung/Satz) und `Idempotency-Key`.
+- **Übungsnotizen:** `features/exercises/note-store` legt eine Änderung sofort als „pending“ ab (kv, überlebt Neustart), zeigt sie vor der gecachten Serverkopie an und reiht `set_exercise_note` in dieselbe Outbox ein – also offline nutzbar, auch ohne aktives Workout. Ist der Eintrag aus der Queue, wird die Notiz in alle `["exercises", …]`-Caches geschrieben und neu geladen. Konflikt zwischen Geräten: Last Writer Wins über die Bearbeitungszeit; Löschen ist ein Tombstone.
 - **Offline-Start:** online wird `plan_session` genutzt (Server erzeugt Übungen + Vorbelegung aus letzter Leistung). Offline baut der Client die Einheit aus dem gecachten Plan und sendet `plan_session_client` + `add_exercise`-Mutationen; der Server verknüpft die Plan-Session.
 
 ## Zeit und Einheiten

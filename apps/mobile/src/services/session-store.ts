@@ -5,6 +5,7 @@ import { createApiClient, type ApiClient, type TokenStore } from "@/lib/api-clie
 import { queryClient } from "@/lib/query-client"
 import { useActiveWorkoutStore } from "@/features/workout/active-workout-store"
 import { useWorkoutUiStore } from "@/features/workout/workout-ui-store"
+import { useExerciseNotesStore } from "@/features/exercises/note-store"
 import { kv, resetLocalDb } from "@/storage/db"
 import { useRestTimerStore } from "./rest-timer-store"
 
@@ -56,6 +57,7 @@ export const useSessionStore = create<SessionState>()((set, get) => {
     useRestTimerStore.getState().stop()
     useActiveWorkoutStore.getState().clearLocal()
     useWorkoutUiStore.getState().reset()
+    useExerciseNotesStore.getState().clear()
   }
   const finishSignOut = async (expired: boolean) => {
     await api.setTokens(null)

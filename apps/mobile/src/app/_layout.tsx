@@ -11,6 +11,7 @@ import { ThemeProvider, useTheme } from "@/design-system"
 import { queryClient, queryPersister } from "@/lib/query-client"
 import { useSessionStore } from "@/services/session-store"
 import { useActiveWorkoutStore } from "@/features/workout/active-workout-store"
+import { useExerciseNotesStore } from "@/features/exercises/note-store"
 import { startLiveActivity } from "@/features/live-activity/live-activity"
 import { useRestTimerStore } from "@/services/rest-timer-store"
 import { useOutboxSync } from "@/services/sync"
@@ -48,6 +49,7 @@ function Root() {
 
   useEffect(() => {
     hydrate()
+    useExerciseNotesStore.getState().hydrate()
     useRestTimerStore.getState().hydrate()
     startLiveActivity()
     void restore()
@@ -73,6 +75,7 @@ function Root() {
         <Stack.Screen name="workout/summary" options={{ presentation: "fullScreenModal", gestureEnabled: false }} />
         <Stack.Screen name="workout/pick-exercise" options={{ presentation: "modal", headerShown: true, title: "Übung wählen", headerTintColor: colors.accent, headerTitleStyle: { color: colors.textPrimary }, headerStyle: { backgroundColor: colors.background }, headerShadowVisible: false }} />
         <Stack.Screen name="workout/overview" options={{ presentation: "formSheet", sheetAllowedDetents: [0.6, 1], sheetGrabberVisible: true, headerShown: false, contentStyle: { backgroundColor: colors.background } }} />
+        <Stack.Screen name="exercise-note" options={{ presentation: "modal", headerShown: true, title: "Notiz", headerTintColor: colors.accent, headerTitleStyle: { color: colors.textPrimary }, headerStyle: { backgroundColor: colors.background }, headerShadowVisible: false }} />
         <Stack.Screen name="workout/guide" options={{ presentation: "modal", headerShown: true, title: "So funktioniert’s", headerTintColor: colors.accent, headerTitleStyle: { color: colors.textPrimary }, headerStyle: { backgroundColor: colors.background }, headerShadowVisible: false }} />
       </Stack>
     </>

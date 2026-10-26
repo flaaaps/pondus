@@ -193,6 +193,25 @@ export const userExerciseFavorites = pgTable(
   t => [primaryKey({ columns: [t.userId, t.exerciseId] })],
 )
 
+/**
+ * Lasting per-user note on an exercise (seat setting, grip, machine number). Separate from
+ * `user_exercise_preferences`, whose rows are replaced wholesale by PUT /me/exercise-preferences.
+ * `note = null` is a tombstone: the row keeps `updated_at`, so an older offline write cannot
+ * resurrect a deleted note (last writer wins on `updated_at`).
+ */
+export const userExerciseNotes = pgTable(
+  "user_exercise_notes",
+  {
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    exerciseId: uuid("exercise_id").notNull().references(() => exercises.id, { onDelete: "cascade" }),
+    note: text("note"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    /** Client edit time (clamped to server time), the last-writer-wins key. */
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  t => [primaryKey({ columns: [t.userId, t.exerciseId] })],
+)
+
 export const userMusclePriorities = pgTable(
   "user_muscle_priorities",
   {

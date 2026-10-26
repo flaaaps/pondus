@@ -8,6 +8,8 @@ import { Button, Card, Chip, ErrorState, LineChart, ListRow, LoadingState, Scree
 import { useAlternatives, useDeleteExercise, useExercise, useExerciseHistory, useToggleFavorite } from "@/features/exercises/queries"
 import { useExerciseProgress } from "@/features/progress/queries"
 import { ExerciseAnimation } from "@/components/ExerciseMedia"
+import { ExerciseNoteLine } from "@/components/ExerciseNoteLine"
+import { useEffectiveNote } from "@/features/exercises/note-store"
 import { useSettingsStore } from "@/services/settings-store"
 import { CATEGORY_LABELS, DIFFICULTY_LABELS, formatDate, formatWeight } from "@/lib/format"
 import { gramsToUnit } from "@pondus/shared"
@@ -25,12 +27,14 @@ export default function ExerciseDetailScreen() {
   const progress = useExerciseProgress(id, "12w")
   const fav = useToggleFavorite()
   const del = useDeleteExercise()
+  const note = useEffectiveNote(id, q.data)
   /** Back to the library (the detail may have been opened via replace from "new"), and drop the deleted exercise from the cache. */
   const onDeleted = (exerciseId: string) => {
     router.dismissTo("/(tabs)/exercises")
     // Drop the deleted exercise from the cache once the detail is gone (also history/alternatives).
     setTimeout(() => qc.removeQueries({ queryKey: queryKeys.exercise(exerciseId) }), 600)
   }
+  const editNote = (exerciseId: string, name: string) => router.push({ pathname: "/exercise-note", params: { scope: "exercise", exerciseId, name } })
   if (q.isLoading) return <LoadingState />
   if (q.isError || !q.data) return <ErrorState onRetry={() => void q.refetch()} />
   const e = q.data
@@ -72,6 +76,17 @@ export default function ExerciseDetailScreen() {
             ) : null}
           </Card>
         ) : null}
+        <Section title="Notiz zu dieser Übung" action={<Button title={note ? "Bearbeiten" : "Hinzufügen"} variant="ghost" size="sm" accessibilityLabel={note ? "Notiz zu dieser Übung bearbeiten" : "Notiz zu dieser Übung hinzufügen"} onPress={() => editNote(e.id, e.nameDe)} />}>
+          <Card padding="sm">
+            {note ? (
+              <ExerciseNoteLine prefix="Notiz" a11yName="Notiz zu dieser Übung" note={note} expanded onEdit={() => editNote(e.id, e.nameDe)} />
+            ) : (
+              <Text variant="footnote" color="secondary">
+                Merk dir hier Sitzeinstellung, Griff oder Maschinennummer – die Notiz erscheint bei jedem Training dieser Übung.
+              </Text>
+            )}
+          </Card>
+        </Section>
         <Card padding="none">
           <ListRow title="Hauptmuskeln" value={e.primaryMuscles.map(muscle).join(", ")} />
           <ListRow title="Nebenmuskeln" value={e.secondaryMuscles.length ? e.secondaryMuscles.map(muscle).join(", ") : "–"} />

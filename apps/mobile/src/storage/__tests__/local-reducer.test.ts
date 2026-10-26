@@ -96,6 +96,16 @@ describe("applyLocalMutation", () => {
     const twice = applyLocalMutation(once, m)!
     expect(twice.exercises).toHaveLength(2)
   })
+  it("stores the workout note of an exercise", () => {
+    const next = applyLocalMutation(base, { kind: "update_exercise", workoutClientId: "w1", exerciseClientId: "e1", body: { notes: "Schulter zwickt" } })!
+    expect(next.exercises[0]!.notes).toBe("Schulter zwickt")
+    expect(next.exercises[0]!.sets).toHaveLength(2)
+  })
+  it("leaves the workout untouched for a lasting exercise note (it lives outside the workout)", () => {
+    const m = { kind: "set_exercise_note" as const, exerciseId: "bench", body: { note: "Sitz 4", updatedAt: "2026-10-25T10:05:00.000Z" } }
+    expect(applyLocalMutation(base, m)).toBe(base)
+    expect(applyLocalMutation(null, m)).toBeNull()
+  })
   it("elapsed excludes an ongoing pause", () => {
     const paused: WorkoutDto = { ...base, status: "paused", pausedAt: "2026-10-25T10:30:00.000Z", pausedSeconds: 60 }
     expect(elapsedSeconds(paused, new Date("2026-10-25T10:45:00.000Z").getTime())).toBe(45 * 60 - 60 - 15 * 60)
