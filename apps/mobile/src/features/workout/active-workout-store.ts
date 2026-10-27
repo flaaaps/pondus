@@ -182,6 +182,39 @@ export const useActiveWorkoutStore = create<ActiveWorkoutState>()((set, get) => 
     set({ serverId: dto.id })
   }
 
+  let flushAgain = false
+  const flushOnce = async (api: ApiClient) => {
+    const box = getOutbox()
+    if (!box.size()) return set({ pending: 0, sync: "idle" })
+    set({ sync: "syncing" })
+    const hadActiveWorkout = !!get().workout
+    const result = await box.flush(mutations => api.post("/api/v1/sync/workouts", { mutations }), { isNetworkError: err => err instanceof ApiError && err.isNetwork })
+    if (result.offline) return set({ sync: "offline", pending: box.size() })
+    if (result.rejected.length) set(s => ({ rejected: [...s.rejected, ...result.rejected.map(r => r.message)].slice(-5) }))
+    // Once the queue is drained the server copy is authoritative; adopt it (ids, previous values).
+    if (box.size() === 0 && get().workout) {
+      try {
+        const cid = workoutClientId()
+        const serverId = get().serverId
+        const dto = serverId ? await api.get<WorkoutDto>(`/api/v1/workouts/${serverId}`) : (await api.get<WorkoutDto | null>("/api/v1/workouts/active")) ?? null
+        if (dto && (dto.clientId === cid || dto.id === serverId)) {
+          if (dto.status === "completed" || dto.status === "cancelled") {
+            // Completed offline → finished on the server now: keep the summary reference and clear the active slot.
+            activeWorkoutStorage.saveLastCompleted(dto)
+            persist(null)
+            set({ serverId: dto.id })
+            invalidateWorkoutViews()
+          } else adoptServer(mergeLocalDrafts(dto, get().workout))
+        }
+      } catch {
+        /* keep local copy */
+      }
+    }
+    // A workout finished or discarded offline has no active slot any more; once its queue drains, refresh the server views.
+    if (!hadActiveWorkout && result.sent > 0 && box.size() === 0) invalidateWorkoutViews()
+    set({ sync: box.size() ? "error" : "idle", pending: box.size(), lastSyncError: result.rejected[0]?.message ?? null })
+  }
+
   return {
     workout: null,
     serverId: null,
@@ -268,36 +301,16 @@ export const useActiveWorkoutStore = create<ActiveWorkoutState>()((set, get) => 
     },
 
     async flush(api) {
-      if (get().sync === "syncing") return
-      const box = getOutbox()
-      if (!box.size()) return set({ pending: 0, sync: "idle" })
-      set({ sync: "syncing" })
-      const hadActiveWorkout = !!get().workout
-      const result = await box.flush(mutations => api.post("/api/v1/sync/workouts", { mutations }), { isNetworkError: err => err instanceof ApiError && err.isNetwork })
-      if (result.offline) return set({ sync: "offline", pending: box.size() })
-      if (result.rejected.length) set(s => ({ rejected: [...s.rejected, ...result.rejected.map(r => r.message)].slice(-5) }))
-      // Once the queue is drained the server copy is authoritative; adopt it (ids, previous values).
-      if (box.size() === 0 && get().workout) {
-        try {
-          const cid = workoutClientId()
-          const serverId = get().serverId
-          const dto = serverId ? await api.get<WorkoutDto>(`/api/v1/workouts/${serverId}`) : (await api.get<WorkoutDto | null>("/api/v1/workouts/active")) ?? null
-          if (dto && (dto.clientId === cid || dto.id === serverId)) {
-            if (dto.status === "completed" || dto.status === "cancelled") {
-              // Completed offline → finished on the server now: keep the summary reference and clear the active slot.
-              activeWorkoutStorage.saveLastCompleted(dto)
-              persist(null)
-              set({ serverId: dto.id })
-              invalidateWorkoutViews()
-            } else adoptServer(mergeLocalDrafts(dto, get().workout))
-          }
-        } catch {
-          /* keep local copy */
-        }
+      // A mutation queued while a flush is out (e.g. "Beenden" right after "Satz ✓") goes with the next
+      // round instead of waiting for the heartbeat.
+      if (get().sync === "syncing") {
+        flushAgain = true
+        return
       }
-      // A workout finished or discarded offline has no active slot any more; once its queue drains, refresh the server views.
-      if (!hadActiveWorkout && result.sent > 0 && box.size() === 0) invalidateWorkoutViews()
-      set({ sync: box.size() ? "error" : "idle", pending: box.size(), lastSyncError: result.rejected[0]?.message ?? null })
+      do {
+        flushAgain = false
+        await flushOnce(api)
+      } while (flushAgain && get().sync !== "offline")
     },
 
     queuedMutations: () => getOutbox().peek().map(e => e.mutation),

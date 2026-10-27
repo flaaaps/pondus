@@ -167,7 +167,7 @@ Nebenbei korrigiert: Nach dem letzten offenen Satz des Workouts hielt die Suche 
 
 ### 4.3 Controller
 
-- **Start:** sobald ein Workout aktiv ist, die App im Vordergrund läuft, die Einstellung an ist und noch keine Instanz existiert. Deep Link `pondus://workout/<id>`.
+- **Start:** sobald ein Workout aktiv ist, die App im Vordergrund läuft, die Einstellung an ist und noch keine Instanz existiert. Deep Link `pondus://workout/<id>`. Derselbe Link gilt für die Zusammenfassung nach dem Beenden: `workout/[id]` findet dann kein aktives Workout mehr und leitet zur Zusammenfassung dieses Workouts weiter (sonst zur Startseite), statt „Kein aktives Workout“ zu zeigen.
 - **Update:** Store-Abos auf Workout, Fokus und Pausentimer. Props neu bauen, mit den zuletzt gesendeten vergleichen und nur bei Unterschied `update(props, staleDate)` aufrufen. Zusätzlich beim Wechsel in den Vordergrund (`AppState` → `active`) einmal neu schreiben.
 - **Ende:**
   - Workout abgeschlossen: Endzustand „Workout beendet · 52 min · 22 Sätze“, `dismissalPolicy` nach 15 Minuten.
