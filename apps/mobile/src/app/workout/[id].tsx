@@ -7,7 +7,7 @@ import {
   View,
   useWindowDimensions,
 } from "react-native"
-import { useRouter } from "expo-router"
+import { useLocalSearchParams, useRouter } from "expo-router"
 import { SymbolView } from "expo-symbols"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import {
@@ -58,6 +58,7 @@ import { useEffectiveNote } from "@/features/exercises/note-store"
 import { useApi } from "@/services/session-store"
 import { useRestTimerStore } from "@/services/rest-timer-store"
 import { useSettingsStore } from "@/services/settings-store"
+import { activeWorkoutStorage } from "@/storage/active-workout"
 import { formatTimer, formatTonnage, SET_TYPE_LABELS } from "@/lib/format"
 import { haptic } from "@/lib/haptics"
 import type { GuideSection } from "./guide"
@@ -84,6 +85,7 @@ export default function ActiveWorkoutScreen() {
   const { fontScale, height } = useWindowDimensions()
   const compact = fontScale >= 1.3 || height < 700
   const router = useRouter()
+  const { id: routeId } = useLocalSearchParams<{ id: string }>()
   const api = useApi()
   const store = useActiveWorkoutStore()
   const workout = store.workout
@@ -157,19 +159,22 @@ export default function ActiveWorkoutScreen() {
     return () => clearTimeout(t)
   }, [ui.toast])
 
-  if (!workout) {
-    if (leaving) return <View style={{ flex: 1, backgroundColor: colors.background }} />
-    return (
-      <View style={{ flex: 1, backgroundColor: colors.background, paddingTop: insets.top }}>
-        <EmptyState
-          icon="figure.strengthtraining.traditional"
-          title="Kein aktives Workout"
-          actionTitle="Zurück"
-          onAction={leave}
-        />
-      </View>
-    )
-  }
+  // Opened without a workout: typically the deep link of a Live Activity whose workout is over
+  // (tapping the "Workout beendet" banner), or a stale link. Go to that workout's summary, else home.
+  const orphaned = store.hydrated && !workout && !leaving
+  useEffect(() => {
+    if (!orphaned) return
+    const completed = activeWorkoutStorage.loadLastCompleted()
+    if (completed && (keyOf(completed) === routeId || completed.id === routeId)) {
+      router.replace({
+        pathname: "/workout/summary",
+        params: { id: completed.id !== completed.clientId ? completed.id : "", local: "", clientId: completed.clientId ?? "" },
+      })
+    } else router.replace("/(tabs)")
+  }, [orphaned, routeId, router])
+
+  // Blank while hydrating, while the redirect above runs, and while "Beenden"/"Verwerfen" leave the screen.
+  if (!workout) return <View style={{ flex: 1, backgroundColor: colors.background }} />
 
   const visible = visibleExercises(workout)
   const skipped = workout.exercises.filter(e => e.skipped)
@@ -529,7 +534,7 @@ export default function ActiveWorkoutScreen() {
     haptic("success")
     router.replace({
       pathname: "/workout/summary",
-      params: { id: "", local: "1", clientId: workout.clientId ?? "" },
+      params: { id: "", local: "", clientId: workout.clientId ?? "" },
     })
   }
   const finish = () => {

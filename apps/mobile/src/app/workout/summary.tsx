@@ -23,7 +23,11 @@ export default function SummaryScreen() {
   const unit = useSettingsStore(s => s.weightUnit)
   const serverIdFromStore = useActiveWorkoutStore(s => s.serverId)
   const pending = useActiveWorkoutStore(s => s.pending)
+  const sync = useActiveWorkoutStore(s => s.sync)
+  // The workout screen hands over right after "Beenden", before the completion has synced: the
+  // server id is known once the outbox is empty, until then the numbers come from the local copy.
   const serverId = id || (pending === 0 ? serverIdFromStore : null) || undefined
+  const syncing = !serverId && pending > 0 && sync === "syncing"
   const summary = useWorkoutSummary(serverId)
   const localWorkout = activeWorkoutStorage.loadLastCompleted()
   const library = useAllExercises()
@@ -83,11 +87,11 @@ export default function SummaryScreen() {
             </Section>
           ) : null}
         </>
-      ) : summary.isLoading && serverId ? (
+      ) : (summary.isLoading && serverId) || syncing ? (
         <LoadingState label="Bestleistungen werden ausgewertet" />
       ) : (
         <Card tone="muted">
-          <Text variant="calloutStrong">{local === "1" || pending ? "Offline gespeichert" : "Auswertung folgt"}</Text>
+          <Text variant="calloutStrong">{local === "1" || sync === "offline" ? "Offline gespeichert" : "Auswertung folgt"}</Text>
           <Text variant="footnote" color="secondary">
             Dein Workout ist lokal gesichert und wird synchronisiert, sobald eine Verbindung besteht. Bestleistungen und Vergleiche erscheinen danach in der Historie.
           </Text>
