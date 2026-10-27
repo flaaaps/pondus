@@ -59,7 +59,7 @@ const alert = createRestAlert({
   bell: RestBell,
   settings: () => {
     const s = useSettingsStore.getState()
-    return { notifications: s.restTimerNotifications, bell: s.restBell, bellVolume: s.restBellVolume }
+    return { notifications: s.restTimerNotifications, bell: s.restBell, bellVolume: s.restBellVolume, bellDuck: s.restBellDuck }
   },
   now: Date.now,
   scheduleNotification,
@@ -176,7 +176,8 @@ RestBell?.addListener("onRouteChange", () => useRestTimerStore.getState().resche
 // Bell switched off: end the audio session now. Any change to bell or notification settings applies to
 // a running rest right away.
 useSettingsStore.subscribe((s, prev) => {
-  if (s.restBell === prev.restBell && s.restTimerNotifications === prev.restTimerNotifications) return
+  const same = s.restBell === prev.restBell && s.restTimerNotifications === prev.restTimerNotifications && s.restBellVolume === prev.restBellVolume && s.restBellDuck === prev.restBellDuck
+  if (same) return
   if (!s.restBell) alert.release()
   useRestTimerStore.getState().rescheduleEnd()
 })

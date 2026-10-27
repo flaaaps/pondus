@@ -188,7 +188,13 @@ export const useActiveWorkoutStore = create<ActiveWorkoutState>()((set, get) => 
     if (!box.size()) return set({ pending: 0, sync: "idle" })
     set({ sync: "syncing" })
     const hadActiveWorkout = !!get().workout
-    const result = await box.flush(mutations => api.post("/api/v1/sync/workouts", { mutations }), { isNetworkError: err => err instanceof ApiError && err.isNetwork })
+    let result: Awaited<ReturnType<typeof box.flush>>
+    try {
+      result = await box.flush(mutations => api.post("/api/v1/sync/workouts", { mutations }), { isNetworkError: err => err instanceof ApiError && err.isNetwork })
+    } catch {
+      // Never leave `sync` on "syncing": every later flush would return early and the queue would never drain.
+      return set({ sync: "error", pending: box.size() })
+    }
     if (result.offline) return set({ sync: "offline", pending: box.size() })
     if (result.rejected.length) set(s => ({ rejected: [...s.rejected, ...result.rejected.map(r => r.message)].slice(-5) }))
     // Once the queue is drained the server copy is authoritative; adopt it (ids, previous values).
@@ -506,6 +512,8 @@ export const useActiveWorkoutStore = create<ActiveWorkoutState>()((set, get) => 
       enqueue(m)
       activeWorkoutStorage.saveLastCompleted(local)
       persist(null)
+      // The summary waits for `pending === 0` before it asks the server; count the completion right away.
+      set({ pending: getOutbox().size() })
       await get().flush(api)
       const serverId = get().serverId
       invalidateWorkoutViews()
@@ -517,7 +525,7 @@ export const useActiveWorkoutStore = create<ActiveWorkoutState>()((set, get) => 
       if (!w) return
       enqueue({ kind: "cancel", workoutClientId: workoutClientId() })
       persist(null)
-      set({ serverId: null })
+      set({ serverId: null, pending: getOutbox().size() })
       await get().flush(api)
       void queryClient.invalidateQueries({ queryKey: ["plans", "week"] })
     },

@@ -89,8 +89,6 @@ export default function ActiveWorkoutScreen() {
   const api = useApi()
   const store = useActiveWorkoutStore()
   const workout = store.workout
-  /** Set once "Beenden" or "Verwerfen" empties the store, so the screen stays blank while it is being left. */
-  const leaving = useRef(false)
   const elapsed = useElapsed(workout)
   const unit = useSettingsStore(s => s.weightUnit)
   const defaultRest = useSettingsStore(s => s.defaultRestSeconds)
@@ -103,6 +101,13 @@ export default function ActiveWorkoutScreen() {
   const [dockHeight, setDockHeight] = useState(140)
   const [keyboardOpen, setKeyboardOpen] = useState(false)
   const [upNextKey, setUpNextKey] = useState<string | null>(null)
+  /** Finishing or discarding clears the workout before the screen is gone; show nothing instead of "Kein aktives Workout". */
+  const [leaving, setLeaving] = useState(false)
+  /** Closes the screen. After a cold start from the Live Activity it is the only screen, so `back()` would do nothing. */
+  const leave = useCallback(() => {
+    if (router.canGoBack()) router.back()
+    else router.replace("/(tabs)")
+  }, [router])
   const advance = useRef<ReturnType<typeof setTimeout> | null>(null)
   const scrollRef = useRef<KeyboardAwareScrollViewRef>(null)
   const editorY = useRef(0)
@@ -156,7 +161,7 @@ export default function ActiveWorkoutScreen() {
 
   // Opened without a workout: typically the deep link of a Live Activity whose workout is over
   // (tapping the "Workout beendet" banner), or a stale link. Go to that workout's summary, else home.
-  const orphaned = store.hydrated && !workout && !leaving.current
+  const orphaned = store.hydrated && !workout && !leaving
   useEffect(() => {
     if (!orphaned) return
     const completed = activeWorkoutStorage.loadLastCompleted()
@@ -510,25 +515,27 @@ export default function ActiveWorkoutScreen() {
           text: "Verwerfen",
           style: "destructive",
           onPress: () => {
-            leaving.current = true
+            setLeaving(true)
             timer.stop()
-            // The store empties synchronously; the server call runs on while the screen is already gone.
+            // Leave right away: with bad reception in the gym the server call can take long, and the
+            // cancel is already queued in the outbox, which retries it on its own.
             void store.cancel(api)
             leave()
           },
         },
       ],
     )
-  /** Back to where the workout was started from; after a cold start via deep link there is nothing beneath. */
-  const leave = () => (router.canGoBack() ? router.back() : router.replace("/(tabs)"))
   const complete = () => {
-    leaving.current = true
+    setLeaving(true)
     timer.stop()
-    // The store empties synchronously and saves the completed copy; the summary shows it right away and
-    // picks up the server id (records, comparison) once the sync has gone through.
-    void store.complete(api).catch(() => undefined)
+    // The completion is saved locally and queued before the first await; the summary shows the local
+    // numbers and switches to the server's (records, comparison) as soon as the outbox has drained.
+    void store.complete(api)
     haptic("success")
-    router.replace({ pathname: "/workout/summary", params: { id: "", local: "", clientId: workout.clientId ?? "" } })
+    router.replace({
+      pathname: "/workout/summary",
+      params: { id: "", local: "", clientId: workout.clientId ?? "" },
+    })
   }
   const finish = () => {
     const openSets = visible.reduce(

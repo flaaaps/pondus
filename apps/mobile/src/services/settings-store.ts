@@ -14,6 +14,8 @@ interface SettingsState {
   restBell: boolean
   /** Bell volume relative to the system volume (0…1). */
   restBellVolume: number
+  /** Turn music and podcasts down while the bell plays. */
+  restBellDuck: boolean
   defaultRestSeconds: number
   /** The short "how to log" intro in the active workout was dismissed. */
   workoutIntroSeen: boolean
@@ -25,6 +27,7 @@ interface SettingsState {
   setRestTimerHaptics: (v: boolean) => void
   setRestBell: (v: boolean) => void
   setRestBellVolume: (v: number) => void
+  setRestBellDuck: (v: boolean) => void
   setDefaultRestSeconds: (v: number) => void
   setWorkoutIntroSeen: (v: boolean) => void
   setLiveActivityEnabled: (v: boolean) => void
@@ -38,7 +41,8 @@ export const useSettingsStore = create<SettingsState>()(
       restTimerNotifications: true,
       restTimerHaptics: true,
       restBell: true,
-      restBellVolume: 0.7,
+      restBellVolume: 1,
+      restBellDuck: true,
       defaultRestSeconds: 120,
       workoutIntroSeen: false,
       liveActivityEnabled: true,
@@ -48,10 +52,22 @@ export const useSettingsStore = create<SettingsState>()(
       setRestTimerHaptics: restTimerHaptics => set({ restTimerHaptics }),
       setRestBell: restBell => set({ restBell }),
       setRestBellVolume: restBellVolume => set({ restBellVolume }),
+      setRestBellDuck: restBellDuck => set({ restBellDuck }),
       setDefaultRestSeconds: defaultRestSeconds => set({ defaultRestSeconds }),
       setWorkoutIntroSeen: workoutIntroSeen => set({ workoutIntroSeen }),
       setLiveActivityEnabled: liveActivityEnabled => set({ liveActivityEnabled }),
     }),
-    { name: "pondus-settings", storage: createJSONStorage(() => AsyncStorage) },
+    {
+      name: "pondus-settings",
+      storage: createJSONStorage(() => AsyncStorage),
+      version: 1,
+      // v1: the bell was too quiet over music. The old default (0.7) moves to the new one (1), a
+      // deliberately chosen "Leise" (0.4) to the new "Leise".
+      migrate: (persisted, version) => {
+        const s = (persisted ?? {}) as Partial<SettingsState>
+        if (version < 1 && typeof s.restBellVolume === "number") s.restBellVolume = s.restBellVolume <= 0.4 ? 0.5 : 1
+        return s as SettingsState
+      },
+    },
   ),
 )
